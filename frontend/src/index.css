@@ -1,0 +1,274 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+ * Lineage Marshal — design tokens.
+ *
+ * THIS FILE IS THE ONLY PLACE IN THE FRONTEND WHERE A RAW HEX VALUE MAY APPEAR.
+ * Everything else references a semantic token (Tailwind utility or var(--…)).
+ * See /design.md for the rationale behind every token below.
+ * ------------------------------------------------------------------------ */
+
+/* Dark is the default theme; [data-theme] is set on <html> before first paint. */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Palette source: colorhunt.co/palette/1b262c0f4c753282b8bbe1fa
+     #1B262C ink · #0F4C75 deep · #3282B8 accent · #BBE1FA mist */
+  --lm-bg: #1b262c;
+  --lm-bg-subtle: #172026;
+  --lm-surface: #1f2c33;
+  --lm-surface-elevated: #24333c;
+  --lm-card: #1f2c33;
+
+  --lm-accent: #3282b8;
+  --lm-accent-hover: #4a97cc;
+  --lm-accent-deep: #0f4c75;
+  --lm-accent-subtle: rgb(50 130 184 / 0.14);
+  --lm-on-accent: #0b1418;
+
+  --lm-border: rgb(187 225 250 / 0.1);
+  --lm-border-strong: rgb(187 225 250 / 0.2);
+
+  --lm-text: #e8f2fa;
+  --lm-text-secondary: #bbe1fa;
+  --lm-text-muted: #7f97a8;
+
+  --lm-success: #3fb98b;
+  --lm-warning: #e0a458;
+  --lm-danger: #e2606b;
+  --lm-info: #3282b8;
+
+  --lm-focus: #4a97cc;
+  --lm-overlay: rgb(11 18 22 / 0.72);
+  --lm-glass: rgb(34 48 58 / 0.55);
+  --lm-glass-border: rgb(187 225 250 / 0.14);
+  --lm-shadow-color: 0 0 0;
+  --lm-shadow-alpha: 0.45;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Palette source: colorhunt.co/palette/ffeddbedcdbbe3b7a0bf9270
+     #FFEDDB sand · #EDCDBB clay · #E3B7A0 terracotta · #BF9270 cocoa */
+  --lm-bg: #ffeddb;
+  --lm-bg-subtle: #f7e2ce;
+  --lm-surface: #fff7ee;
+  --lm-surface-elevated: #fffdfa;
+  --lm-card: #fff7ee;
+
+  --lm-accent: #bf9270;
+  --lm-accent-hover: #a87a58;
+  --lm-accent-deep: #8c5c3d;
+  --lm-accent-subtle: rgb(191 146 112 / 0.16);
+  --lm-on-accent: #fff7ee;
+
+  --lm-border: rgb(191 146 112 / 0.28);
+  --lm-border-strong: rgb(191 146 112 / 0.48);
+
+  --lm-text: #3a2b21;
+  --lm-text-secondary: #6b4f3c;
+  --lm-text-muted: #9a7a63;
+
+  --lm-success: #2f8f63;
+  --lm-warning: #b4731f;
+  --lm-danger: #b34a4a;
+  --lm-info: #8c5c3d;
+
+  --lm-focus: #a87a58;
+  --lm-overlay: rgb(58 43 33 / 0.44);
+  --lm-glass: rgb(255 247 238 / 0.62);
+  --lm-glass-border: rgb(191 146 112 / 0.26);
+  --lm-shadow-color: 122 84 58;
+  --lm-shadow-alpha: 0.18;
+}
+
+/* Map tokens into Tailwind's theme so utilities (bg-surface, text-muted,
+   rounded-lg, shadow-elevated, ease-standard …) resolve to the same vars. */
+@theme inline {
+  --color-bg: var(--lm-bg);
+  --color-bg-subtle: var(--lm-bg-subtle);
+  --color-surface: var(--lm-surface);
+  --color-surface-elevated: var(--lm-surface-elevated);
+  --color-card: var(--lm-card);
+
+  --color-accent: var(--lm-accent);
+  --color-accent-hover: var(--lm-accent-hover);
+  --color-accent-deep: var(--lm-accent-deep);
+  --color-accent-subtle: var(--lm-accent-subtle);
+  --color-on-accent: var(--lm-on-accent);
+
+  --color-border: var(--lm-border);
+  --color-border-strong: var(--lm-border-strong);
+
+  --color-text: var(--lm-text);
+  --color-text-secondary: var(--lm-text-secondary);
+  --color-muted: var(--lm-text-muted);
+
+  --color-success: var(--lm-success);
+  --color-warning: var(--lm-warning);
+  --color-danger: var(--lm-danger);
+  --color-info: var(--lm-info);
+
+  --color-focus: var(--lm-focus);
+  --color-overlay: var(--lm-overlay);
+  --color-glass: var(--lm-glass);
+  --color-glass-border: var(--lm-glass-border);
+
+  /* Spacing scale — 4pt grid. Tailwind's numeric scale already maps to 0.25rem
+     steps; these aliases exist so semantic names are available too. */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 0.75rem;
+  --spacing-lg: 1rem;
+  --spacing-xl: 1.5rem;
+  --spacing-2xl: 2rem;
+  --spacing-3xl: 3rem;
+  --spacing-4xl: 4rem;
+
+  /* Radius scale */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Elevation — colour-aware so light theme casts a warm, not black, shadow. */
+  --shadow-soft: 0 1px 2px rgb(var(--lm-shadow-color) / calc(var(--lm-shadow-alpha) * 0.5));
+  --shadow-medium:
+    0 2px 4px rgb(var(--lm-shadow-color) / calc(var(--lm-shadow-alpha) * 0.5)),
+    0 8px 16px -6px rgb(var(--lm-shadow-color) / calc(var(--lm-shadow-alpha) * 0.7));
+  --shadow-elevated:
+    0 4px 8px -2px rgb(var(--lm-shadow-color) / calc(var(--lm-shadow-alpha) * 0.6)),
+    0 16px 32px -12px rgb(var(--lm-shadow-color) / var(--lm-shadow-alpha));
+  --shadow-floating:
+    0 8px 16px -4px rgb(var(--lm-shadow-color) / calc(var(--lm-shadow-alpha) * 0.7)),
+    0 32px 64px -16px rgb(var(--lm-shadow-color) / var(--lm-shadow-alpha));
+
+  /* Motion — mirrored 1:1 in src/design/motion.ts for Framer Motion. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-entrance: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+
+  --animate-shimmer: shimmer 1.6s var(--ease-standard) infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family:
+      'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+      'Helvetica Neue', sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Ambient gradient wash — the "premium" depth cue. Fixed + non-interactive so
+     it never enters hit-testing or scroll cost. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(60rem 40rem at 12% -10%, var(--color-accent-subtle), transparent 60%),
+      radial-gradient(50rem 34rem at 92% 4%, var(--color-accent-subtle), transparent 55%);
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family:
+      'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+      monospace;
+  }
+
+  /* One focus treatment for the whole app — never removed, only restyled. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background: var(--color-accent-subtle);
+    color: var(--color-text);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: var(--radius-full);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  /* Glassmorphism preset — one definition, used by shell, dropdowns and toasts.
+     Deliberately sets no border: callers pick which edges they want with the
+     normal border utilities (`border border-glass-border`, `border-b`, …),
+     which a `border` shorthand here would silently override. */
+  .glass {
+    background-color: var(--color-glass);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+
+  /* Hairline top highlight that sells the "lit from above" card look. */
+  .rim-light {
+    box-shadow: inset 0 1px 0 0 var(--color-glass-border);
+  }
+}
+
+/* The sidebar is a transform-animated drawer below lg and static chrome above
+   it. Framer Motion writes `transform` inline, which a utility class can't
+   beat — `!important` here is the one thing that can, and it is scoped to the
+   single element that needs it. */
+@media (min-width: 64rem) {
+  [data-sidebar] {
+    transform: none !important;
+  }
+}
+
+/* Respect the OS reduced-motion setting globally. Framer Motion honours this
+   too (see useReducedMotion), this catches CSS-only animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
