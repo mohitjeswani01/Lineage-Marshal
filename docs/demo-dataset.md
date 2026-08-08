@@ -1,6 +1,6 @@
 # Demo Dataset — Lineage Marshal
 
-> **Purpose:** This document describes the demo dataset used for Lineage Marshal's hackathon demo. It covers: what the `showcase-ecommerce` pack contains, the 3 deliberate issues we planted on top of it, and a demo narrative script for Rahul to use during the demo.
+> **Purpose:** This document describes the demo dataset used for Lineage Marshal's hackathon demo. It covers: what the `showcase-ecommerce` pack contains, the 3 deliberate trigger issues and 6 downstream fan-out assets we planted on top of it, and a demo narrative script for Rahul to use during the demo.
 
 ---
 
@@ -24,9 +24,9 @@ datahub docker ingest-sample-data --pack showcase-ecommerce
 
 ---
 
-## 2. Planted Demo Issues
+## 2. Planted Demo Issues & Downstream Fan-out
 
-We layered 3 deliberate issues on top of the showcase data using `scripts/seed_demo_issues.py`. All 3 are on platform `hive`, environment `PROD` — consistent with the showcase pack's existing Hive assets so they appear naturally in search alongside real data.
+We layered 3 trigger issues and multi-hop downstream fan-out assets on top of the showcase data using `scripts/seed_demo_issues.py`. All are on platform `hive`, environment `PROD` — consistent with the showcase pack's existing Hive assets so they appear naturally in search alongside real data.
 
 **Script:** `scripts/seed_demo_issues.py`  
 **Idempotency:** Re-running the script is safe. It uses a check-if-exists-then-upsert pattern (`DataHubGraph.get_aspect()` → skip create, re-emit aspects). If you wipe and rebuild Docker containers, re-run the script to restore planted issues.
@@ -41,8 +41,9 @@ python3 scripts/seed_demo_issues.py --gms-url http://localhost:8080 --token <you
 
 ---
 
-### Issue 1 — Broken Lineage Edge
+### Issue 1 — Broken Lineage Edge & Downstream Fan-out
 
+#### Primary Trigger Asset
 | Field | Value |
 |---|---|
 | **Asset URN** | `urn:li:dataset:(urn:li:dataPlatform:hive,orders_revenue_summary,PROD)` |
@@ -52,16 +53,29 @@ python3 scripts/seed_demo_issues.py --gms-url http://localhost:8080 --token <you
 | **Dangling upstream URN** | `urn:li:dataset:(urn:li:dataPlatform:hive,orders_source_legacy,PROD)` |
 | **Why this is realistic** | A decommissioned source table — the lineage edge was never cleaned up when the table was dropped |
 
+#### Downstream Assets
+1. **`monthly_reconciliation_report`**
+   - **Asset URN:** `urn:li:dataset:(urn:li:dataPlatform:hive,monthly_reconciliation_report,PROD)`
+   - **Lineage Position:** Hop 1 downstream of `orders_revenue_summary`
+   - **Ownership:** `urn:li:corpuser:charlie` (Assigned owner)
+   - **Why this is realistic:** Monthly financial reconciliation report derived from daily order revenue totals.
+2. **`legacy_audit_export`**
+   - **Asset URN:** `urn:li:dataset:(urn:li:dataPlatform:hive,legacy_audit_export,PROD)`
+   - **Lineage Position:** Hop 2 downstream of `orders_revenue_summary` (via `monthly_reconciliation_report`)
+   - **Ownership:** `[]` (Explicitly ownerless)
+   - **Why this is realistic:** Legacy audit compliance export script orphaned after a team reorg.
+
 **How to detect it:**
 - **UI:** Search `orders_revenue_summary` → open Lineage tab → upstream node `orders_source_legacy` appears but clicking it shows "Entity not found" / no metadata
 - **MCP/API:** `get_lineage(urn)` returns `orders_source_legacy` as upstream; `get_dataset_properties(orders_source_legacy URN)` returns null/404
 
-**Demo significance:** The agent should identify this as a broken lineage edge, note that the upstream doesn't exist in the catalog, and flag it as an unresolvable dependency — so any freshness or schema check on `orders_revenue_summary` cannot be traced back to a root source.
+**Demo significance:** Lineage Marshal identifies the dangling upstream reference, computes blast radius across both downstream hops, and flags `legacy_audit_export` as unnotifiable due to missing ownership.
 
 ---
 
-### Issue 2 — No Owner Assigned
+### Issue 2 — No Owner Assigned & Downstream Target
 
+#### Primary Trigger Asset
 | Field | Value |
 |---|---|
 | **Asset URN** | `urn:li:dataset:(urn:li:dataPlatform:hive,user_churn_predictions,PROD)` |
@@ -70,16 +84,24 @@ python3 scripts/seed_demo_issues.py --gms-url http://localhost:8080 --token <you
 | **What was planted** | `OwnershipClass(owners=[])` — an explicitly empty ownership aspect |
 | **Why this is realistic** | ML model output orphaned after a team reorg — the owning team dissolved and nobody re-assigned it |
 
+#### Downstream Asset
+1. **`marketing_campaign_target_list`**
+   - **Asset URN:** `urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD)`
+   - **Lineage Position:** Hop 1 downstream of `user_churn_predictions`
+   - **Ownership:** `[]` (Explicitly ownerless)
+   - **Why this is realistic:** Automated target list fed by ML model outputs for re-engagement campaigns; also orphaned after team changes.
+
 **How to detect it:**
 - **UI:** Search `user_churn_predictions` → open Governance tab → Owners section is empty
 - **MCP/API:** `get_owners(urn)` returns `[]` (empty list)
 
-**Demo significance:** The agent cannot notify anyone about an incident affecting this asset — it's a true ownership gap. Lineage Marshal should surface this as part of blast radius computation: "downstream affected, but no owner to notify."
+**Demo significance:** Lineage Marshal detects that neither the root model output nor its downstream campaign list has an assigned owner, highlighting an urgent operational gap in the blast radius analysis.
 
 ---
 
-### Issue 3 — Stale Freshness Signal
+### Issue 3 — Stale Freshness Signal & Multi-Hop Downstream Fan-out
 
+#### Primary Trigger Asset
 | Field | Value |
 |---|---|
 | **Asset URN** | `urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)` |
@@ -89,60 +111,53 @@ python3 scripts/seed_demo_issues.py --gms-url http://localhost:8080 --token <you
 | **Expected cadence** | Daily (documented in `customProperties.expected_update_cadence`) |
 | **Owner** | `urn:li:corpuser:datahub` (has an owner — this is not an ownership issue) |
 
+#### Downstream Assets
+1. **`revenue_analytics_dashboard`**
+   - **Asset URN:** `urn:li:dataset:(urn:li:dataPlatform:hive,revenue_analytics_dashboard,PROD)`
+   - **Lineage Position:** Hop 1 downstream of `daily_revenue_report`
+   - **Ownership:** `urn:li:corpuser:alice` (Assigned owner)
+   - **Why this is realistic:** Operational analytics dashboard consumed by business analysts.
+2. **`executive_finance_summary`**
+   - **Asset URN:** `urn:li:dataset:(urn:li:dataPlatform:hive,executive_finance_summary,PROD)`
+   - **Lineage Position:** Hop 1 downstream of `daily_revenue_report`
+   - **Ownership:** `urn:li:corpuser:bob` (Assigned owner)
+   - **Why this is realistic:** High-visibility executive table summarizing daily financial health.
+3. **`churn_risk_dashboard`**
+   - **Asset URN:** `urn:li:dataset:(urn:li:dataPlatform:hive,churn_risk_dashboard,PROD)`
+   - **Lineage Position:** Hop 2 downstream of `daily_revenue_report` (via `executive_finance_summary`)
+   - **Ownership:** `[]` (Explicitly ownerless)
+   - **Why this is realistic:** Risk management dashboard consuming executive summaries; unowned.
+
 **How to detect it:**
 - **UI:** Search `daily_revenue_report` → Properties tab → Last Modified timestamp is 30 days old
 - **MCP/API:** `get_dataset_properties(urn).lastModified.time` returns a Unix-ms timestamp ~30 days in the past; delta from now > 1 day = SLA breach for a daily pipeline
 
-**Demo significance:** The agent should detect this as a missed freshness SLA — the pipeline that feeds this report has not run in 30 days despite a daily expected cadence. This is the trigger scenario for the "missed freshness SLA" use case.
+**Demo significance:** Demonstrates Lineage Marshal's composite severity ranking. `churn_risk_dashboard` ranks #1 (`HIGH` severity) due to the ownership penalty (`❌` no owner), while `executive_finance_summary` and `revenue_analytics_dashboard` rank `MEDIUM` severity.
 
 ---
 
-## 3. Verification — Live Query Output (real output, run 2026-08-06)
+## 3. Verification — Live Query Output
 
-The following is actual terminal output from `python3 scripts/seed_demo_issues.py` run against the live DataHub instance:
+Actual terminal output from `python3 scripts/seed_demo_issues.py` run against the live DataHub instance:
 
-```
-19:56:29  INFO     Lineage Marshal — Demo Issue Seeder
-19:56:29  INFO     GMS URL : http://localhost:8080
-19:56:29  INFO     Auth    : no auth (open instance)
-19:56:30  INFO     Checking GMS connectivity …
-19:56:30  INFO     Connected to DataHub GMS. Auth enabled: unknown
-19:56:30  INFO     ─── Planting demo issues ───
-19:56:32  INFO     [Issue 1] Creating orders_revenue_summary …
-19:56:35  INFO     [Issue 1] ✓ Broken lineage planted.
-          Asset  : urn:li:dataset:(urn:li:dataPlatform:hive,orders_revenue_summary,PROD)
-          Dangling upstream: urn:li:dataset:(urn:li:dataPlatform:hive,orders_source_legacy,PROD)
-19:56:36  INFO     [Issue 2] Creating user_churn_predictions …
-19:56:49  INFO     [Issue 2] ✓ No-owner condition planted.
-          Asset: urn:li:dataset:(urn:li:dataPlatform:hive,user_churn_predictions,PROD)
-          Owners: [] (empty)
-19:56:50  INFO     [Issue 3] Creating daily_revenue_report with lastModified=2026-07-07T19:56:49Z …
-19:56:53  INFO     [Issue 3] ✓ Stale freshness planted.
+```text
+20:44:19  INFO     [Issue 3] ✓ Stale freshness & multi-hop downstream lineage planted.
           Asset      : urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)
-          lastModified: 2026-07-07T19:56:49Z (30 days ago)
-19:56:53  INFO     Waiting 3s for GMS to index MCPs …
-19:56:58  INFO     ─── Live verification (reading back from DataHub) ───
-19:56:58  INFO     [Verify 1] Querying lineage for orders_revenue_summary …
-19:56:58  INFO                upstream URN : urn:li:dataset:(urn:li:dataPlatform:hive,orders_source_legacy,PROD)
-           exists in catalog: False  ← should be False   ✓
-19:56:58  INFO     [Verify 2] Querying ownership for user_churn_predictions …
-19:56:58  INFO                owners: []  ← should be []   ✓
-19:56:58  INFO     [Verify 3] Querying properties for daily_revenue_report …
-19:56:58  INFO                lastModified : 2026-07-07T19:56:49Z
-           age (days)   : 30  ← should be ~30   ✓
-19:56:58  INFO     Seed complete. Check DataHub UI at http://localhost:9002
+          lastModified: 2026-07-09T20:43:58Z (30 days ago)
+          Downstream Hop 1a: urn:li:dataset:(urn:li:dataPlatform:hive,revenue_analytics_dashboard,PROD) (Owner: alice)
+          Downstream Hop 1b: urn:li:dataset:(urn:li:dataPlatform:hive,executive_finance_summary,PROD) (Owner: bob)
+          Downstream Hop 2 : urn:li:dataset:(urn:li:dataPlatform:hive,churn_risk_dashboard,PROD) (NO OWNER)
+
+20:44:22  INFO     ─── Live verification (reading back from DataHub) ───
+20:44:22  INFO     [Verify 1] Querying lineage for orders_revenue_summary …
+20:44:22  INFO                upstream URN : urn:li:dataset:(urn:li:dataPlatform:hive,orders_source_legacy,PROD)
+           exists in catalog: False  ← should be False
+20:44:22  INFO     [Verify 2] Querying ownership for user_churn_predictions …
+20:44:22  INFO                owners: []  ← should be []
+20:44:22  INFO     [Verify 3] Querying properties for daily_revenue_report …
+20:44:22  INFO                lastModified : 2026-07-09T20:43:58Z
+           age (days)   : 30  ← should be ~30
 ```
-
-**Final entity counts after ingestion + seeding** (queried via GraphQL):
-
-| Entity type | Count |
-|---|---|
-| DATASET | **70** (67 showcase + 3 seeded) |
-| CHART | 12 |
-| DASHBOARD | 0 (Looker/Tableau views stored as datasets) |
-| DATA_FLOW | 23 |
-| DATA_JOB | 20 |
-| GLOSSARY_TERM | 10 |
 
 ---
 
@@ -151,10 +166,16 @@ The following is actual terminal output from `python3 scripts/seed_demo_issues.p
 | Asset | Source | Notes |
 |---|---|---|
 | All showcase-ecommerce entities | Real (loaded by `datahub docker ingest-sample-data`) | Hive, Snowflake, dbt, Looker assets with rich lineage |
-| `orders_revenue_summary` | **Planted** | Synthetic — the broken-lineage target |
-| `orders_source_legacy` | **Planted (phantom)** | Never ingested — exists only as a dangling reference in `orders_revenue_summary`'s lineage |
-| `user_churn_predictions` | **Planted** | Synthetic — the no-owner asset |
-| `daily_revenue_report` | **Planted** | Synthetic — the stale freshness asset |
+| `orders_revenue_summary` | **Planted** | Synthetic — broken-lineage trigger asset |
+| `orders_source_legacy` | **Planted (phantom)** | Never ingested — dangling upstream reference |
+| `monthly_reconciliation_report` | **Planted** | Synthetic — Hop 1 downstream of `orders_revenue_summary` (Owner: `charlie`) |
+| `legacy_audit_export` | **Planted** | Synthetic — Hop 2 downstream of `orders_revenue_summary` (Ownerless) |
+| `user_churn_predictions` | **Planted** | Synthetic — no-owner trigger asset |
+| `marketing_campaign_target_list` | **Planted** | Synthetic — Hop 1 downstream of `user_churn_predictions` (Ownerless) |
+| `daily_revenue_report` | **Planted** | Synthetic — stale freshness trigger asset |
+| `revenue_analytics_dashboard` | **Planted** | Synthetic — Hop 1 downstream of `daily_revenue_report` (Owner: `alice`) |
+| `executive_finance_summary` | **Planted** | Synthetic — Hop 1 downstream of `daily_revenue_report` (Owner: `bob`) |
+| `churn_risk_dashboard` | **Planted** | Synthetic — Hop 2 downstream of `daily_revenue_report` (Ownerless) |
 
 ---
 
@@ -162,25 +183,22 @@ The following is actual terminal output from `python3 scripts/seed_demo_issues.p
 
 **Scene: Lineage Marshal receives an incident trigger**
 
-> "A freshness SLA breach has been detected on `daily_revenue_report` — it hasn't been updated in 30 days. The agent kicks in."
+> "A freshness SLA breach has been detected on `daily_revenue_report` — it hasn't been updated in 30 days. Lineage Marshal kicks in."
 
 **Step 1 — Trigger receipt**
 > The agent receives a simulated trigger: asset `urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)` has missed its daily freshness SLA.
 
-**Step 2 — Lineage traversal**
-> Agent calls DataHub's lineage API via MCP. It walks upstream to find root causes, and downstream to compute blast radius. During upstream traversal, it crosses into `orders_revenue_summary`... and hits a dead end: `orders_source_legacy` doesn't exist in the catalog.
+**Step 2 — Lineage & Blast Radius traversal**
+> Agent calls DataHub's lineage API via MCP. It walks downstream across multiple hops to identify all dependent assets (`revenue_analytics_dashboard`, `executive_finance_summary`, `churn_risk_dashboard`).
 
-**Step 3 — Ownership lookup**
-> Agent resolves owners for all affected downstream assets. For `user_churn_predictions` (downstream of the revenue pipeline), the ownership API returns an empty list. The agent notes: "Cannot notify — no owner."
+**Step 3 — Severity & Ownership Analysis**
+> Agent computes composite impact scores. `churn_risk_dashboard` ranks #1 with `HIGH` severity because of an ownership gap (`❌` no owner assigned).
 
-**Step 4 — Blast radius scoring**
-> Agent computes blast radius using lineage depth + usage stats. The daily revenue report feeds the finance dashboard — high usage, high priority.
+**Step 4 — Plain-English brief to owner**
+> Agent notifies `datahub` (owner of `daily_revenue_report`), `alice`, and `bob`, while highlighting unnotifiable ownerless downstream assets in the incident alert.
 
-**Step 5 — Plain-English brief to owner**
-> Agent notifies `datahub` (the owner of `daily_revenue_report`) with a summary: pipeline down for 30 days, broken upstream lineage at `orders_source_legacy`, one downstream orphaned asset with no owner.
-
-**Step 6 — Context Document written back to DataHub**
-> Agent writes an incident context doc onto `daily_revenue_report` in DataHub: what broke, blast radius, resolution status. The next engineer (or agent) who looks at this asset sees the full incident history — zero re-investigation needed.
+**Step 5 — Context Document written back to DataHub**
+> Agent writes an incident context doc onto affected assets in DataHub so future investigations inherit the context instantly.
 
 ---
 
@@ -195,6 +213,6 @@ datahub init --username datahub --password datahub --force
 # 2. Re-load sample data
 datahub docker ingest-sample-data --pack showcase-ecommerce
 
-# 3. Re-plant the 3 issues (idempotent — safe to run even if some assets survived)
+# 3. Re-plant issues & downstream lineage (idempotent — safe to run repeatedly)
 python3 scripts/seed_demo_issues.py
 ```
