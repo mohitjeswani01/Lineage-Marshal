@@ -15,3 +15,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Trigger dedup cache (file-backed, per-machine)
+.trigger_cache.json
