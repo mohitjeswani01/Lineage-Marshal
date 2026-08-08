@@ -5,30 +5,24 @@ import { AssetSelector } from '@/features/trigger/AssetSelector';
 import { TriggerPanel } from '@/features/trigger/TriggerPanel';
 import { ResponsePanel } from '@/features/trigger/ResponsePanel';
 import { TriggerHistory } from '@/features/trigger/TriggerHistory';
+import { Timeline } from '@/features/trigger/Timeline';
 import { sendTrigger } from '@/api/agent';
 import { DEMO_ASSETS } from '@/api/demoAssets';
 import type { TriggerRequest, TriggerResponse } from '@/api/contract';
 import { useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { useTriggerHistory, type HistoryEntry } from '@/hooks/useTriggerHistory';
+import { useTriggerProgress } from '@/hooks/useTriggerProgress';
 import { urnDisplayName } from '@/lib/urn';
 import { fadeInUp, staggerList } from '@/design';
 
-/**
- * The trigger demo page: select an asset → configure a trigger → send it to
- * the agent → read the response. History is local so a run can be replayed.
- *
- * The page owns exactly one piece of cross-panel state (the selected URN plus
- * the response being displayed); everything else lives in the panel that uses
- * it.
- */
 export function TriggerDemoPage() {
   const [selectedUrn, setSelectedUrn] = useState<string>(
     DEMO_ASSETS[0]?.urn ?? '',
   );
-  /** Set when the user clicks a history entry — shows a stored response. */
   const [replayed, setReplayed] = useState<HistoryEntry>();
   const [elapsedMs, setElapsedMs] = useState<number>();
+  const [triggerId, setTriggerId] = useState<string>();
 
   const toast = useToast();
   const history = useTriggerHistory();
@@ -38,8 +32,20 @@ export function TriggerDemoPage() {
     (signal, request) => sendTrigger(request, signal),
   );
 
-  // Live elapsed counter while the agent runs — a 40s wait with no feedback
-  // reads as a hang.
+  const { progress, isPolling } = useTriggerProgress({
+    triggerId,
+    enabled: !!triggerId && trigger.status === 'loading',
+    onComplete: (p) => {
+      if (p.status === 'failed') {
+        toast.push({
+          tone: 'error',
+          title: 'Investigation failed',
+          description: p.error ?? `Failed at ${p.failedStep ?? 'unknown step'}`,
+        });
+      }
+    },
+  });
+
   useEffect(() => {
     if (trigger.status !== 'loading') return;
     const id = setInterval(
@@ -54,6 +60,7 @@ export function TriggerDemoPage() {
   const handleSubmit = useCallback(
     async (request: TriggerRequest) => {
       setReplayed(undefined);
+      setTriggerId(undefined);
       startedAt.current = performance.now();
       setElapsedMs(0);
 
@@ -61,7 +68,6 @@ export function TriggerDemoPage() {
       const durationMs = performance.now() - startedAt.current;
       setElapsedMs(durationMs);
 
-      // Cancelled by the user — no history entry, no toast.
       if (!result.ok && result.error === null) return;
 
       const base = {
@@ -75,11 +81,12 @@ export function TriggerDemoPage() {
       };
 
       if (result.ok) {
+        setTriggerId(result.data.triggerId);
         history.add({ ...base, outcome: 'success', response: result.data });
         toast.push({
           tone: 'success',
-          title: 'Trigger completed',
-          description: `${base.assetName} · ${result.data.status}`,
+          title: 'Trigger accepted',
+          description: `${base.assetName} · Investigation started`,
         });
       } else {
         history.add({
@@ -104,6 +111,8 @@ export function TriggerDemoPage() {
       ? ('idle' as const)
       : trigger.status;
 
+  const showTimeline = !!triggerId && (trigger.status === 'loading' || isPolling);
+
   return (
     <AppShell
       title="Trigger demo"
@@ -115,7 +124,7 @@ export function TriggerDemoPage() {
         animate="visible"
         className="grid gap-4 lg:grid-cols-12"
       >
-        <motion.div variants={fadeInUp} className="lg:col-span-4 lg:row-span-2">
+        <motion.div variants={fadeInUp} className="lg:col-span-4 lg:row-span-3">
           <AssetSelector selectedUrn={selectedUrn} onSelect={handleSelect} />
         </motion.div>
 
@@ -128,7 +137,22 @@ export function TriggerDemoPage() {
           />
         </motion.div>
 
-        <motion.div variants={fadeInUp} className="lg:col-span-5 lg:row-span-2">
+        {showTimeline && (
+          <motion.div
+            variants={fadeInUp}
+            className="lg:col-span-5"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <Timeline progress={progress} triggerId={triggerId} />
+          </motion.div>
+        )}
+
+        <motion.div
+          variants={fadeInUp}
+          className={showTimeline ? 'lg:col-span-5 lg:row-span-2' : 'lg:col-span-5 lg:row-span-2'}
+        >
           <ResponsePanel
             status={displayStatus}
             response={displayed}

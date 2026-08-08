@@ -126,3 +126,31 @@ export const issueLabel: Record<IssueKind, string> = {
   stale_freshness: 'Stale freshness',
   unknown: 'Unclassified',
 };
+
+export const PIPELINE_STEPS = [
+  'detect',
+  'investigate',
+  'resolve_owner',
+  'notify',
+  'write_back',
+] as const;
+export type PipelineStep = (typeof PIPELINE_STEPS)[number];
+
+export interface PipelineProgress {
+  triggerId: string;
+  currentStep: PipelineStep;
+  completedSteps: PipelineStep[];
+  failedStep?: PipelineStep;
+  error?: string;
+  status: 'running' | 'completed' | 'failed';
+  updatedAt: string;
+  stepDetails?: Record<PipelineStep, StepDetail>;
+}
+
+export interface StepDetail {
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
