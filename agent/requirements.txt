@@ -1,0 +1,7 @@
+acryl-datahub==1.7.0
+mcp-server-datahub
+mcp
+python-dotenv
+pytest
+pytest-asyncio
+pydantic
