@@ -1,4 +1,6 @@
 # Lineage Marshal
+<img width="1331" height="881" alt="image" src="https://github.com/user-attachments/assets/4db2c1d6-d9ee-4589-af2f-f78a011e30c8" />
+
 
 > **Incident investigation agent for data pipelines** — Automatically computes blast radius, resolves ownership, and writes investigation context back to DataHub so the next investigation inherits this knowledge.
 
