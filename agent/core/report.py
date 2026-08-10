@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 from agent.core.blast_radius import BlastRadiusResult, ImpactedAsset
 from agent.core.ownership import GlossaryResolution, OwnershipResolution, OwnerContact
 from agent.core.trigger import TriggerEvent
+from agent.core.writeback import write_context_document, WriteResult
 from agent.mcp.tools import ContextDocumentResult, NoData
 
 
@@ -257,3 +258,13 @@ def render_report(report: InvestigationReport) -> str:
         ])
 
     return "\n".join(lines)
+
+
+def write_investigation_report(
+    trigger_urn: str,
+    report: InvestigationReport,
+    actor: str = "urn:li:corpuser:datahub",
+) -> WriteResult:
+    """Write the investigation report markdown to DataHub as a context document (InstitutionalMemory)."""
+    markdown = render_report(report)
+    return write_context_document(trigger_urn, markdown, actor)

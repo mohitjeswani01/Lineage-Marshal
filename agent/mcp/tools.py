@@ -250,17 +250,9 @@ def read_context_document(
     urn: str,
 ) -> Union[ContextDocumentResult, NoData]:
     """Read existing description and documentation for an asset."""
-    try:
-        res = client.call_tool("get_entities", {"urns": [urn]})
-        content = res.get("content", [])
-        if not content:
-            return NoData(reason="Asset metadata not found", urn=urn)
-
-        text = content[0].get("text", "")
-        return ContextDocumentResult(urn=urn, description=text)
-    except MCPClientError as e:
-        logger.warning(f"Read context document failed for '{urn}': {e}")
-        return NoData(reason=f"Read context document RPC error: {e}", urn=urn)
+    # Delegate to the writeback module which uses InstitutionalMemory
+    from agent.core.writeback import read_context_document as _read_context_document
+    return _read_context_document(urn)
 
 
 def write_context_document(
@@ -268,20 +260,7 @@ def write_context_document(
     urn: str,
     markdown_content: str,
 ) -> bool:
-    """Write context documentation onto an asset in DataHub.
-
-    # TODO(Issue 10): needs append/version semantics — update_description likely overwrites, Issue 10 AC requires preserving prior incident history. Revisit via InstitutionalMemory aspect or custom versioned aspect before building the real write-back.
-    """
-    try:
-        res = client.call_tool(
-            "update_description",
-            {
-                "entity_urn": urn,
-                "operation": "SET",
-                "description": markdown_content,
-            },
-        )
-        return bool(res.get("content"))
-    except MCPClientError as e:
-        logger.error(f"Failed to write context document for '{urn}': {e}")
-        return False
+    """Write context documentation onto an asset in DataHub (append/version semantics via InstitutionalMemory)."""
+    from agent.core.writeback import write_context_document as _write_context_document
+    result = _write_context_document(urn, markdown_content)
+    return result.success

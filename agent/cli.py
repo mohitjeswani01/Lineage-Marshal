@@ -3,6 +3,7 @@
 Usage:
     python -m agent.cli trigger --urn <URN> --type <TYPE> [--context '{"key": "val"}']
     python -m agent.cli blast-radius --urn <URN> [--max-hops N]
+    python -m agent.cli investigate --urn <URN> --type <TYPE> [--context '{"key": "val"}'] [--max-hops N]
 
 Examples:
     python -m agent.cli trigger \
@@ -12,6 +13,12 @@ Examples:
 
     python -m agent.cli blast-radius \
         --urn "urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)" \
+        --max-hops 3
+
+    python -m agent.cli investigate \
+        --urn "urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)" \
+        --type FRESHNESS_SLA_BREACH \
+        --context '{"sla_hours": 24, "expected_cadence": "daily"}' \
         --max-hops 3
 """
 
@@ -24,7 +31,10 @@ import sys
 from datetime import datetime, timezone
 
 from agent.core.blast_radius import BlastRadiusResult, ImpactedAsset, compute_blast_radius
+from agent.core.ownership import resolve_glossary_context, resolve_ownership
+from agent.core.report import InvestigationReport, generate_investigation_report, render_report, write_investigation_report
 from agent.core.trigger import TriggerEvent, TriggerResult, TriggerType, fire_trigger
+from agent.core.writeback import WriteResult, read_context_document
 from agent.mcp.client import DataHubMCPClient
 
 logging.basicConfig(
@@ -137,6 +147,24 @@ def _print_blast_radius(result: BlastRadiusResult) -> None:
     print()
 
 
+def _print_write_result(result: WriteResult) -> None:
+    """Pretty-print write-back result."""
+    print()
+    print("=" * 72)
+    print("  CONTEXT DOCUMENT WRITE-BACK")
+    print("=" * 72)
+    if result.success:
+        print(f"  Status         : ✅ SUCCESS")
+        print(f"  Asset          : {result.urn}")
+        print(f"  Total versions : {result.elements_count}")
+    else:
+        print(f"  Status         : ❌ FAILED")
+        print(f"  Asset          : {result.urn}")
+        print(f"  Error          : {result.error}")
+    print("=" * 72)
+    print()
+
+
 # ---------------------------------------------------------------------------
 # CLI commands
 # ---------------------------------------------------------------------------
@@ -188,6 +216,89 @@ def _cmd_blast_radius(args: argparse.Namespace) -> None:
         _print_blast_radius(result)
 
 
+def _cmd_investigate(args: argparse.Namespace) -> None:
+    """Execute full investigation: trigger + blast radius + ownership + glossary + report + write-back."""
+    # Parse raw_context JSON
+    raw_context = {}
+    if args.context:
+        try:
+            raw_context = json.loads(args.context)
+        except json.JSONDecodeError as e:
+            print(f"Error: --context is not valid JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Parse trigger type
+    try:
+        trigger_type = TriggerType(args.type.upper())
+    except ValueError:
+        valid = ", ".join(t.value for t in TriggerType)
+        print(f"Error: invalid --type '{args.type}'. Valid types: {valid}", file=sys.stderr)
+        sys.exit(1)
+
+    event = TriggerEvent(
+        asset_urn=args.urn,
+        trigger_type=trigger_type,
+        raw_context=raw_context,
+        source="manual",
+    )
+
+    with DataHubMCPClient() as client:
+        # Step 1: Fire trigger
+        print("Firing trigger...")
+        trigger_result = fire_trigger(client, event)
+        _print_trigger_result(trigger_result)
+
+        if not trigger_result.accepted:
+            sys.exit(1 if not trigger_result.deduplicated else 2)
+
+        # Step 2: Compute blast radius
+        print("Computing blast radius...")
+        blast = compute_blast_radius(client, event.asset_urn, max_hops=args.max_hops)
+        _print_blast_radius(blast)
+
+        # Step 3: Resolve ownership for all downstream assets
+        print("Resolving ownership...")
+        ownership_map = {}
+        for asset in blast.downstream_assets:
+            ownership_map[asset.urn] = resolve_ownership(client, asset.urn)
+        ownership_map[event.asset_urn] = resolve_ownership(client, event.asset_urn)
+
+        # Step 4: Resolve glossary context
+        print("Resolving business context...")
+        glossary_map = {}
+        for asset in blast.downstream_assets:
+            glossary_map[asset.urn] = resolve_glossary_context(client, asset.urn)
+        glossary_map[event.asset_urn] = resolve_glossary_context(client, event.asset_urn)
+
+        # Step 5: Read prior context documents
+        print("Reading prior investigation context...")
+        prior_context_docs = {}
+        for asset in blast.downstream_assets:
+            prior_context_docs[asset.urn] = read_context_document(asset.urn)
+        prior_context_docs[event.asset_urn] = read_context_document(event.asset_urn)
+
+        # Step 6: Generate investigation report
+        print("Generating investigation report...")
+        report = generate_investigation_report(
+            trigger_event=event,
+            blast_radius=blast,
+            ownership_map=ownership_map,
+            glossary_map=glossary_map,
+            prior_context_docs=prior_context_docs,
+        )
+
+        # Print markdown report
+        print(render_report(report))
+
+        # Step 7: Write report back to DataHub
+        print("Writing investigation context to DataHub...")
+        write_result = write_investigation_report(event.asset_urn, report)
+        _print_write_result(write_result)
+
+        if not write_result.success:
+            sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -236,6 +347,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum lineage traversal depth (default: 5)",
     )
     br_parser.set_defaults(func=_cmd_blast_radius)
+
+    # --- investigate (full pipeline with write-back) ---
+    inv_parser = subparsers.add_parser(
+        "investigate",
+        help="Full investigation pipeline: trigger → blast radius → ownership → glossary → report → write-back",
+    )
+    inv_parser.add_argument(
+        "--urn", required=True,
+        help="DataHub URN of the affected asset",
+    )
+    inv_parser.add_argument(
+        "--type", required=True,
+        help="Trigger type: SCHEMA_CHANGE, FRESHNESS_SLA_BREACH, or JOB_FAILURE",
+    )
+    inv_parser.add_argument(
+        "--context", default=None,
+        help='Raw context as JSON string, e.g. \'{"sla_hours": 24}\'',
+    )
+    inv_parser.add_argument(
+        "--max-hops", type=int, default=5,
+        help="Maximum lineage traversal depth (default: 5)",
+    )
+    inv_parser.set_defaults(func=_cmd_investigate)
 
     return parser
 
