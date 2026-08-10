@@ -1,4 +1,4 @@
-import { colors, statusColor } from './colors';
+import { colors, statusColor, severityColor } from './colors';
 import { spacing, layout } from './spacing';
 import { radius, radiusFor } from './radius';
 import { shadows, elevation } from './shadows';
@@ -11,6 +11,7 @@ import {
   interaction,
   transition,
 } from './motion';
+import { graph } from './graph';
 
 /**
  * The single design-token object. Components should import the focused module
@@ -23,6 +24,7 @@ import {
 export const theme = {
   colors,
   status: statusColor,
+  severity: severityColor,
   spacing,
   layout,
   radius,
@@ -33,6 +35,7 @@ export const theme = {
   fontSize,
   fontWeight,
   motion: { duration, easing, spring, stagger, interaction, transition },
+  graph,
 } as const;
 
 export type Theme = typeof theme;

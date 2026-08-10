@@ -1,67 +1,89 @@
-import { AnimatePresence, motion } from 'framer-motion';
+/**
+ * Live investigation timeline: detect → investigate → resolve_owner → notify
+ * → write_back.
+ *
+ * Every state here comes from `useTriggerProgress` polling the real agent —
+ * there is no simulated advance. If the backend stalls on `investigate`, this
+ * sits on `investigate`, which is exactly what an on-call engineer needs to
+ * see. The animation's only job is to make the current position obvious at a
+ * glance from across the room.
+ */
+import { motion, useReducedMotion } from 'framer-motion';
 import {
-  AlertTriangle,
-  CheckCircle2,
+  Bell,
+  Database,
   Loader2,
   Search,
   UserCheck,
-  Bell,
-  Database,
+  Waypoints,
   XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import type { PipelineProgress, PipelineStep } from '@/api/contract';
-import { spring, staggerList, fadeInUp } from '@/design';
+import type { PipelineProgress, PipelineStep, StepDetail } from '@/api/contract';
+import { PIPELINE_STEPS } from '@/api/contract';
+import { duration, easing, spring, stagger, transition, type as t } from '@/design';
+import { formatDuration } from '@/lib/format';
 import { getStepStatus } from '@/hooks/useTriggerProgress';
 
-const STEP_CONFIG: Record<PipelineStep, { label: string; description: string; icon: typeof Search }> = {
+type StepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+const STEP_CONFIG: Record<
+  PipelineStep,
+  { label: string; description: string; icon: typeof Search }
+> = {
   detect: {
     label: 'Detect',
-    description: 'Identify the incident and affected asset',
+    description: 'Classify the incident and confirm the affected asset',
     icon: Search,
   },
   investigate: {
     label: 'Investigate',
-    description: 'Walk lineage upstream and downstream',
-    icon: AlertTriangle,
+    description: 'Walk DataHub lineage and score blast radius per hop',
+    icon: Waypoints,
   },
   resolve_owner: {
     label: 'Resolve owner',
-    description: 'Find and verify responsible owners',
+    description: 'Resolve owners and flag assets that have none',
     icon: UserCheck,
   },
   notify: {
     label: 'Notify',
-    description: 'Alert owners via configured channels',
+    description: 'Alert the resolved owners on their configured channel',
     icon: Bell,
   },
   write_back: {
     label: 'Write back',
-    description: 'Persist findings and update metadata',
+    description: 'Persist a versioned report to DataHub',
     icon: Database,
   },
-};
-
-const STEP_ICONS: Record<PipelineStep, typeof Search> = {
-  detect: Search,
-  investigate: AlertTriangle,
-  resolve_owner: UserCheck,
-  notify: Bell,
-  write_back: Database,
 };
 
 interface TimelineProps {
   progress: PipelineProgress | null;
   triggerId?: string;
+  /** Whether the agent is still being polled — true before the first payload. */
+  polling?: boolean;
   className?: string;
 }
 
-export function Timeline({ progress, triggerId, className }: TimelineProps) {
-  const steps = Object.keys(STEP_CONFIG) as PipelineStep[];
+export function Timeline({
+  progress,
+  triggerId,
+  polling,
+  className,
+}: TimelineProps) {
+  const reduced = useReducedMotion() ?? false;
+
   const isComplete = progress?.status === 'completed';
   const isFailed = progress?.status === 'failed';
+  // Before the first poll lands there is no progress payload, but the agent is
+  // very much running — say so rather than showing an inert list.
+  const isRunning = progress?.status === 'running' || (!!polling && !progress);
+
+  const completed = progress?.completedSteps.length ?? 0;
+  const percent = Math.round((completed / PIPELINE_STEPS.length) * 100);
 
   return (
     <Card padding="none" className={cn('overflow-hidden', className)}>
@@ -71,72 +93,125 @@ export function Timeline({ progress, triggerId, className }: TimelineProps) {
             <Loader2
               aria-hidden
               className={cn(
-                'size-4',
-                (progress && progress.status === 'running') && 'animate-spin text-accent'
+                'size-4 shrink-0',
+                isRunning && !reduced && 'animate-spin',
+                isRunning ? 'text-accent' : isFailed ? 'text-danger' : 'text-success',
               )}
             />
-            <span className="font-medium">Investigation timeline</span>
+            <h2 className={t.h3}>Investigation timeline</h2>
           </div>
           {triggerId && (
-            <Badge tone="neutral" className="font-mono text-[10px]">
-              {triggerId.slice(0, 8)}…
+            <Badge tone="neutral" className="shrink-0 font-mono text-[10px]">
+              {triggerId.slice(0, 8)}
             </Badge>
           )}
         </div>
-        {progress && (
-          <p className="mt-1 text-[11px] text-muted">
-            Status:{' '}
-            <span className={cn('font-medium', {
-              'text-success': isComplete,
-              'text-danger': isFailed,
-              'text-accent': progress.status === 'running',
-            })}>
-              {progress.status}
+
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center justify-between text-[11px]">
+            <span className={t.overline}>
+              {completed} of {PIPELINE_STEPS.length} steps
             </span>
-            {progress.updatedAt && (
-              <span className="ml-2">· Updated {new Date(progress.updatedAt).toLocaleTimeString()}</span>
-            )}
+            <span
+              className={cn(
+                'font-mono font-medium',
+                isFailed ? 'text-danger' : isComplete ? 'text-success' : 'text-accent',
+              )}
+            >
+              {percent}%
+            </span>
+          </div>
+          <div
+            role="progressbar"
+            aria-valuenow={percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Investigation progress"
+            className="h-1.5 overflow-hidden rounded-full bg-border"
+          >
+            <motion.div
+              initial={reduced ? false : { width: 0 }}
+              animate={{ width: `${percent}%` }}
+              transition={reduced ? { duration: 0 } : spring.gentle}
+              className={cn(
+                'h-full rounded-full',
+                isFailed
+                  ? 'bg-danger'
+                  : 'glow bg-gradient-to-r from-accent-deep to-accent',
+              )}
+            />
+          </div>
+        </div>
+
+        {progress && (
+          <p className="mt-2 text-[11px] text-muted" aria-live="polite">
+            <span
+              className={cn(
+                'font-medium',
+                isComplete && 'text-success',
+                isFailed && 'text-danger',
+                isRunning && 'text-accent',
+              )}
+            >
+              {isRunning
+                ? `Running · ${STEP_CONFIG[progress.currentStep].label}`
+                : progress.status}
+            </span>
+            <span className="ml-2">
+              updated {new Date(progress.updatedAt).toLocaleTimeString()}
+            </span>
           </p>
         )}
       </div>
 
-      <div className="p-4">
-        <motion.ul
-          variants={staggerList}
-          initial="hidden"
-          animate="visible"
-          className="space-y-3"
-          role="list"
-          aria-label="Agent investigation steps"
-        >
-          <AnimatePresence initial={false}>
-            {steps.map((step, index) => (
-              <TimelineStepItem
-                key={step}
-                step={step}
-                index={index}
-                progress={progress}
-                isLast={index === steps.length - 1}
-              />
-            ))}
-          </AnimatePresence>
-        </motion.ul>
+      <div className="relative p-4">
+        {/* Rail. Sits at the indicator centre: 16px padding + 16px half-width. */}
+        <div className="absolute top-6 bottom-6 left-8 w-px bg-border" aria-hidden>
+          <motion.div
+            initial={reduced ? false : { scaleY: 0 }}
+            animate={{ scaleY: completed / PIPELINE_STEPS.length }}
+            transition={reduced ? { duration: 0 } : spring.gentle}
+            style={{ transformOrigin: 'top center' }}
+            className={cn(
+              'size-full',
+              isFailed
+                ? 'bg-danger'
+                : 'bg-gradient-to-b from-accent to-accent-hover',
+            )}
+          />
+        </div>
+
+        <ol className="relative space-y-1" aria-label="Agent investigation steps">
+          {PIPELINE_STEPS.map((step, index) => (
+            <TimelineStepItem
+              key={step}
+              step={step}
+              index={index}
+              status={getStepStatus(progress, step)}
+              detail={progress?.stepDetails?.[step]}
+              reduced={reduced}
+            />
+          ))}
+        </ol>
 
         {progress?.failedStep && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mt-4 rounded-md border border-danger/25 bg-danger/8 p-3"
+            initial={reduced ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={transition.entrance}
             role="alert"
+            className="mt-3 flex items-start gap-2 rounded-md border border-danger/25 bg-danger/8 p-3"
           >
-            <div className="flex items-start gap-2">
-              <XCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
-              <div>
-                <p className="font-medium text-danger text-sm">Step failed: {STEP_CONFIG[progress.failedStep].label}</p>
-                {progress.error && (
-                  <p className="mt-1 text-[11px] text-text-secondary">{progress.error}</p>
-                )}
-              </div>
+            <XCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-danger">
+                Failed at {STEP_CONFIG[progress.failedStep].label}
+              </p>
+              {progress.error && (
+                <p className="mt-1 text-[11px] leading-relaxed text-text-secondary">
+                  {progress.error}
+                </p>
+              )}
             </div>
           </motion.div>
         )}
@@ -145,106 +220,79 @@ export function Timeline({ progress, triggerId, className }: TimelineProps) {
   );
 }
 
-interface TimelineStepItemProps {
+function TimelineStepItem({
+  step,
+  index,
+  status,
+  detail,
+  reduced,
+}: {
   step: PipelineStep;
   index: number;
-  progress: PipelineProgress | null;
-  isLast: boolean;
-}
-
-function TimelineStepItem({ step, index, progress, isLast }: TimelineStepItemProps) {
+  status: StepStatus;
+  detail?: StepDetail;
+  reduced: boolean;
+}) {
   const config = STEP_CONFIG[step];
-  const status = getStepStatus(progress, step);
-  const detail = progress?.stepDetails?.[step];
+  const isPending = status === 'pending';
 
-  const getStepDuration = () => {
-    if (detail?.startedAt && detail?.completedAt) {
-      return new Date(detail.completedAt).getTime() - new Date(detail.startedAt).getTime();
-    }
-    return null;
-  };
-
-  const duration = getStepDuration();
+  const elapsed =
+    detail?.startedAt && detail?.completedAt
+      ? Date.parse(detail.completedAt) - Date.parse(detail.startedAt)
+      : undefined;
 
   return (
     <motion.li
-      variants={fadeInUp}
-      layout
+      initial={reduced ? false : { opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={
+        reduced
+          ? { duration: 0 }
+          : { ...transition.entrance, delay: stagger.delay + index * stagger.children }
+      }
       className="relative flex gap-3"
-      style={{ '--delay': `${index * 50}ms` } as React.CSSProperties}
     >
-      <div className="relative flex flex-col items-center shrink-0">
-        <StepIndicator
-          step={step}
-          status={status}
-          isLast={isLast}
-        />
+      <StepIndicator status={status} icon={config.icon} reduced={reduced} />
 
-        <div className="absolute left-1/2 top-6 -translate-x-1/2 w-px h-full bg-border" />
-        {isLast && <div className="absolute left-1/2 top-6 -translate-x-1/2 w-px h-6 bg-border" />}
-      </div>
-
-      <div className="min-w-0 flex-1 pt-0.5">
-        <div className="flex items-center gap-2">
-          <motion.span
-            initial={false}
-            animate={{ opacity: status === 'completed' || status === 'running' ? 1 : 0.4 }}
-            transition={spring.gentle}
-            className="flex items-center gap-1.5"
-          >
-            <config.icon
-              aria-hidden
-              className={cn(
-                'size-3.5 shrink-0',
-                status === 'completed' && 'text-success',
-                status === 'running' && 'text-accent animate-pulse',
-                status === 'failed' && 'text-danger',
-                (status === 'pending' || status === 'running') && 'text-muted',
-              )}
-            />
-            <span
-              className={cn(
-                'font-medium text-sm',
-                status === 'completed' && 'text-text',
-                status === 'running' && 'text-accent',
-                status === 'failed' && 'text-danger',
-                status === 'pending' && 'text-muted',
-              )}
-            >
-              {config.label}
-            </span>
-            {duration !== null && (
-              <span className="font-mono text-[10px] text-muted">
-                ({formatDuration(duration)})
-              </span>
+      <div className="min-w-0 flex-1 pt-1 pb-3">
+        <div className="flex flex-wrap items-center gap-x-2">
+          <span
+            className={cn(
+              'text-sm font-medium transition-colors duration-200 ease-standard',
+              status === 'completed' && 'text-text',
+              status === 'running' && 'text-accent',
+              status === 'failed' && 'text-danger',
+              isPending && 'text-muted',
             )}
-          </motion.span>
+          >
+            {config.label}
+          </span>
+          {elapsed !== undefined && (
+            <span className="font-mono text-[10px] text-muted">
+              {formatDuration(elapsed)}
+            </span>
+          )}
         </div>
 
-        <motion.p
-          initial={false}
-          animate={{ opacity: status === 'pending' ? 0.5 : 1 }}
-          transition={spring.gentle}
-          className="mt-1 ml-5.5 text-[11px] text-text-secondary"
+        <p
+          className={cn(
+            'mt-0.5 text-[11px] leading-relaxed transition-opacity duration-200 ease-standard',
+            isPending ? 'text-muted opacity-60' : 'text-text-secondary',
+          )}
         >
           {config.description}
-        </motion.p>
+        </p>
 
         {status === 'failed' && detail?.error && (
-          <motion.p
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mt-1.5 ml-5.5 text-[11px] text-danger"
-          >
-            {detail.error}
-          </motion.p>
+          <p className="mt-1.5 text-[11px] text-danger">{detail.error}</p>
         )}
 
-        {detail?.metadata && (
+        {detail?.metadata && Object.keys(detail.metadata).length > 0 && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mt-1.5 ml-5.5 flex flex-wrap gap-1"
+            initial={reduced ? false : { opacity: 0, y: -2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={transition.entrance}
+            className="mt-1.5 flex flex-wrap gap-1"
           >
             {Object.entries(detail.metadata).map(([key, value]) => (
               <Badge key={key} tone="neutral" className="text-[10px]">
@@ -259,60 +307,78 @@ function TimelineStepItem({ step, index, progress, isLast }: TimelineStepItemPro
 }
 
 function StepIndicator({
-  step,
   status,
-  isLast,
+  icon: Icon,
+  reduced,
 }: {
-  step: PipelineStep;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  isLast: boolean;
+  status: StepStatus;
+  icon: typeof Search;
+  reduced: boolean;
 }) {
-  const Icon = STEP_ICONS[step];
+  const running = status === 'running';
 
   return (
-    <div className="relative flex size-7 items-center justify-center z-10">
-      <div
+    <div className="relative z-10 shrink-0">
+      <motion.div
+        animate={
+          running && !reduced
+            ? { scale: [1, 1.06, 1] }
+            : { scale: 1 }
+        }
+        transition={
+          running && !reduced
+            ? { duration: duration.ambient / 2, repeat: Infinity, ease: 'easeInOut' }
+            : spring.snappy
+        }
         className={cn(
-          'relative flex size-7 items-center justify-center rounded-full border-2',
-          'transition-all duration-300 ease-standard',
+          'flex size-8 items-center justify-center rounded-full border-2 bg-bg',
+          'transition-colors duration-300 ease-standard',
           status === 'completed' && 'border-success bg-success',
-          status === 'running' && 'border-accent bg-accent-subtle',
+          running && 'glow border-accent bg-accent-subtle',
           status === 'failed' && 'border-danger bg-danger',
           status === 'pending' && 'border-border bg-surface',
         )}
       >
-        {status === 'running' ? (
+        {status === 'completed' ? (
+          <CheckMark reduced={reduced} />
+        ) : status === 'failed' ? (
+          <XCircle aria-hidden className="size-4 text-bg" />
+        ) : running ? (
           <motion.span
             aria-hidden
-            animate={{ scale: [1, 1.2, 1], opacity: [1, 0.5, 1] }}
-            transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
+            animate={reduced ? {} : { scale: [1, 1.35, 1], opacity: [1, 0.45, 1] }}
+            transition={{
+              duration: duration.ambient / 4,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
             className="size-2.5 rounded-full bg-accent"
           />
-        ) : status === 'completed' ? (
-          <CheckCircle2 aria-hidden className="size-4 text-on-success" />
-        ) : status === 'failed' ? (
-          <XCircle aria-hidden className="size-4 text-on-danger" />
         ) : (
           <Icon aria-hidden className="size-3.5 text-muted" />
         )}
-      </div>
-
-      {!isLast && (
-        <motion.div
-          initial={false}
-          animate={{
-            backgroundColor: status === 'completed' ? 'var(--color-success)' : 'var(--color-border)',
-          }}
-          transition={spring.gentle}
-          className="absolute left-1/2 top-7 -translate-x-1/2 w-px h-full"
-        />
-      )}
+      </motion.div>
     </div>
   );
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
+/** Draws itself in rather than popping — the completion beat of each step. */
+function CheckMark({ reduced }: { reduced: boolean }) {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="size-4 text-bg">
+      <motion.path
+        d="M6 12.5l4 4 8-9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        initial={reduced ? false : { pathLength: 0 }}
+        animate={{ pathLength: 1 }}
+        transition={
+          reduced ? { duration: 0 } : { duration: duration.slow, ease: easing.entrance }
+        }
+      />
+    </svg>
+  );
 }

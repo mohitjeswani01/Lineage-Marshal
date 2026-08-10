@@ -1,11 +1,13 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ToastProvider } from '@/hooks/useToast';
 import { TriggerDemoPage } from '@/pages/TriggerDemoPage';
+import { LandingPage } from '@/pages/LandingPage';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useHashRoute } from '@/hooks/useHashRoute';
 
 /**
  * Last-resort boundary. A render crash in one panel shouldn't take the whole
- * demo down with a blank page — show what broke and offer a reload.
+ * app down with a blank page — show what broke and offer a reload.
  */
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -39,10 +41,12 @@ class ErrorBoundary extends Component<
 }
 
 export default function App() {
+  const route = useHashRoute();
+
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <TriggerDemoPage />
+        {route === '/console' ? <TriggerDemoPage /> : <LandingPage />}
       </ToastProvider>
     </ErrorBoundary>
   );

@@ -1,8 +1,17 @@
-import { useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+  useTransform,
+} from 'framer-motion';
+import {
+  AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
+  BadgeCheck,
   Braces,
   FileText,
   Radio,
@@ -22,7 +31,11 @@ import type { ApiError } from '@/api/client';
 import { urnDisplayName } from '@/lib/urn';
 import { formatDuration } from '@/lib/format';
 import {
+  duration as durationTokens,
+  easing,
   fadeInUp,
+  hopReveal,
+  shake,
   spring,
   staggerList,
   transition,
@@ -36,6 +49,14 @@ const LEVEL_TONE: Record<string, BadgeTone> = {
   critical: 'danger',
 };
 
+/** Meter fill per level. Severity has to read pre-attentively, before the number. */
+const LEVEL_FILL: Record<string, string> = {
+  low: 'from-success/50 to-success',
+  medium: 'from-warning/50 to-warning',
+  high: 'from-danger/50 to-danger',
+  critical: 'from-danger/50 to-danger',
+};
+
 interface ResponsePanelProps {
   status: 'idle' | 'loading' | 'success' | 'error';
   response?: TriggerResponse;
@@ -43,14 +64,6 @@ interface ResponsePanelProps {
   elapsedMs?: number;
 }
 
-/**
- * Renders the agent's trigger response.
- *
- * Tolerant by design: every analysis field is optional, so a partially
- * implemented agent renders what it produced instead of blank space, and the
- * raw view always shows the full payload — nothing the backend returns is
- * hidden from the operator.
- */
 export function ResponsePanel({
   status,
   response,
@@ -80,7 +93,7 @@ export function ResponsePanel({
                 onClick={() => setView(v)}
                 aria-pressed={view === v}
                 className={cn(
-                  'relative rounded px-2.5 py-1 text-[11px] capitalize transition-colors',
+                  'relative rounded px-2.5 py-1 text-[11px] capitalize transition-colors duration-200 ease-standard',
                   view === v ? 'text-text' : 'text-muted hover:text-text-secondary',
                 )}
               >
@@ -125,12 +138,16 @@ export function ResponsePanel({
 
           {status === 'error' && error && (
             <motion.div key="error" {...panelMotion}>
-              <EmptyState
-                tone="error"
-                icon={<ShieldAlert className="size-5" />}
-                title="Trigger failed"
-                description={error.userMessage}
-              />
+              {/* One low-amplitude shake, then still. Failure should register,
+                  not alarm — this panel may be on a wall display all day. */}
+              <motion.div variants={shake} initial="idle" animate="shake">
+                <EmptyState
+                  tone="error"
+                  icon={<ShieldAlert className="size-5" />}
+                  title="Trigger failed"
+                  description={error.userMessage}
+                />
+              </motion.div>
             </motion.div>
           )}
 
@@ -155,15 +172,19 @@ const panelMotion = {
   exit: { opacity: 0, y: -4, transition: transition.exit },
 } as const;
 
-/** Indeterminate progress — the agent doesn't stream stage events (yet). */
 function RunningState({ elapsedMs }: { elapsedMs?: number }) {
+  const reduced = useReducedMotion() ?? false;
   return (
     <div className="space-y-4" role="status" aria-live="polite">
       <div className="flex items-center gap-2 text-xs text-text-secondary">
         <motion.span
           aria-hidden
-          animate={{ opacity: [0.35, 1, 0.35] }}
-          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+          animate={reduced ? {} : { opacity: [0.35, 1, 0.35] }}
+          transition={{
+            duration: durationTokens.ambient / 2,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
           className="size-2 rounded-full bg-accent"
         />
         Agent is walking lineage and resolving owners
@@ -202,6 +223,7 @@ function Summary({
   } = response;
 
   const took = durationMs ?? elapsedMs;
+  const reduced = useReducedMotion() ?? false;
 
   return (
     <motion.div
@@ -210,11 +232,9 @@ function Summary({
       animate="visible"
       className="space-y-4"
     >
-      <motion.div variants={fadeInUp} className="flex items-center gap-2">
-        <SuccessMark />
-        <Badge tone={status === 'failed' ? 'danger' : 'success'}>
-          {status}
-        </Badge>
+      <motion.div variants={fadeInUp} className="flex flex-wrap items-center gap-2">
+        <SuccessMark reduced={reduced} />
+        <Badge tone={status === 'failed' ? 'danger' : 'success'}>{status}</Badge>
         {took !== undefined && (
           <span className="font-mono text-[11px] text-muted">
             {formatDuration(took)}
@@ -241,7 +261,7 @@ function Summary({
 
       {blastRadius && (
         <motion.div variants={fadeInUp}>
-          <BlastRadiusCard blastRadius={blastRadius} />
+          <BlastRadiusCard blastRadius={blastRadius} reduced={reduced} />
         </motion.div>
       )}
 
@@ -277,6 +297,8 @@ function Summary({
             icon={<ArrowDownRight aria-hidden className="size-3.5" />}
             nodes={downstream}
             emptyLabel="No downstream returned"
+            /* Impacted assets arrive hop by hop, mirroring the lineage walk. */
+            staggerByHop
           />
         </motion.div>
       </div>
@@ -297,48 +319,95 @@ function Summary({
   );
 }
 
-function BlastRadiusCard({ blastRadius }: { blastRadius: BlastRadius }) {
+function BlastRadiusCard({
+  blastRadius,
+  reduced,
+}: {
+  blastRadius: BlastRadius;
+  reduced: boolean;
+}) {
   const { score, level, downstreamCount, ownerlessCount, rationale } = blastRadius;
-  const pct = typeof score === 'number' ? Math.min(100, Math.max(0, score)) : undefined;
+  const pct =
+    typeof score === 'number' ? Math.min(100, Math.max(0, score)) : undefined;
 
   return (
     <div className="rounded-lg border border-border bg-surface-elevated p-3">
       <div className="flex items-center justify-between gap-2">
         <p className={t.overline}>Blast radius</p>
-        {level && <Badge tone={LEVEL_TONE[level] ?? 'neutral'}>{level}</Badge>}
+        {level && (
+          <motion.div
+            initial={reduced ? false : { opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={
+              reduced
+                ? { duration: 0 }
+                : { ...spring.snappy, delay: durationTokens.slower }
+            }
+          >
+            <Badge
+              tone={LEVEL_TONE[level] ?? 'neutral'}
+              icon={
+                level === 'low' ? (
+                  <BadgeCheck aria-hidden className="size-3" />
+                ) : (
+                  <AlertCircle aria-hidden className="size-3" />
+                )
+              }
+            >
+              {level}
+            </Badge>
+          </motion.div>
+        )}
       </div>
 
       {pct !== undefined && (
-        <div className="mt-2">
+        <div className="mt-2 flex items-center gap-3">
           <div
             role="meter"
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Blast radius score"
-            className="h-1.5 overflow-hidden rounded-full bg-border"
+            aria-label={`Blast radius score${level ? `, ${level}` : ''}`}
+            className="h-2 flex-1 overflow-hidden rounded-full bg-border"
           >
             <motion.div
-              initial={{ width: 0 }}
+              initial={reduced ? false : { width: 0 }}
               animate={{ width: `${pct}%` }}
-              transition={{ ...spring.gentle, delay: 0.1 }}
-              className="h-full rounded-full bg-gradient-to-r from-accent-deep to-accent"
+              transition={reduced ? { duration: 0 } : spring.gentle}
+              className={cn(
+                'h-full rounded-full bg-gradient-to-r transition-colors duration-300 ease-standard',
+                LEVEL_FILL[level ?? 'low'] ?? 'from-accent-deep to-accent',
+                (level === 'high' || level === 'critical') && 'glow',
+              )}
             />
           </div>
-          <p className="mt-1 font-mono text-[11px] text-muted">{pct}/100</p>
+          <p className="shrink-0 font-mono text-sm tabular-nums text-text">
+            <ScoreCounter value={pct} reduced={reduced} />
+            <span className="text-muted">/100</span>
+          </p>
         </div>
       )}
 
       <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted">
         {downstreamCount !== undefined && (
-          <span>
+          <span className="flex items-center gap-1">
+            <ArrowDownRight aria-hidden className="size-3" />
             <strong className="text-text">{downstreamCount}</strong> downstream
           </span>
         )}
-        {ownerlessCount !== undefined && (
-          <span>
-            <strong className="text-text">{ownerlessCount}</strong> without owner
-          </span>
+        {ownerlessCount !== undefined && ownerlessCount > 0 && (
+          <motion.span
+            animate={reduced ? {} : { opacity: [1, 0.55, 1] }}
+            transition={{
+              duration: durationTokens.ambient / 2,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+            className="flex items-center gap-1 text-warning"
+          >
+            <UserX aria-hidden className="size-3" />
+            <strong>{ownerlessCount}</strong> without owner
+          </motion.span>
         )}
       </div>
 
@@ -351,17 +420,38 @@ function BlastRadiusCard({ blastRadius }: { blastRadius: BlastRadius }) {
   );
 }
 
+/** Counts the score up into place, so the number reads as *scored*, not printed. */
+function ScoreCounter({ value, reduced }: { value: number; reduced: boolean }) {
+  const raw = useMotionValue(reduced ? value : 0);
+  const { stiffness, damping, mass } = spring.gentle;
+  const smoothed = useSpring(raw, { stiffness, damping, mass });
+  const rounded = useTransform(smoothed, (v) => Math.round(v));
+
+  useEffect(() => {
+    raw.set(value);
+  }, [raw, value]);
+
+  if (reduced) return <>{Math.round(value)}</>;
+  return <motion.span>{rounded}</motion.span>;
+}
+
 function LineageList({
   title,
   icon,
   nodes,
   emptyLabel,
+  staggerByHop,
 }: {
   title: string;
   icon: ReactNode;
   nodes: LineageNode[];
   emptyLabel: string;
+  staggerByHop?: boolean;
 }) {
+  const ownerless = nodes.filter(
+    (node) => node.exists !== false && node.owners?.length === 0,
+  ).length;
+
   return (
     <div className="rounded-lg border border-border p-3">
       <p className={cn(t.overline, 'mb-2 flex items-center gap-1.5')}>
@@ -373,17 +463,24 @@ function LineageList({
       {nodes.length === 0 ? (
         <p className="text-[11px] text-muted">{emptyLabel}</p>
       ) : (
-        <ul className="space-y-1">
+        <motion.ul initial="hidden" animate="visible" className="space-y-1">
           {nodes.map((node) => (
-            <li
+            <motion.li
               key={node.urn}
+              variants={hopReveal}
+              custom={staggerByHop ? (node.depth ?? 0) : 0}
               className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[11px]"
             >
               <span className="truncate font-mono text-text-secondary">
                 {node.name ?? urnDisplayName(node.urn)}
               </span>
               {node.depth !== undefined && (
-                <span className="shrink-0 text-muted">·{node.depth}</span>
+                <span
+                  className="shrink-0 text-muted"
+                  title={`${node.depth} hop${node.depth === 1 ? '' : 's'} downstream`}
+                >
+                  ·{node.depth}
+                </span>
               )}
               {node.exists === false && (
                 <Badge tone="danger" className="ml-auto shrink-0">
@@ -395,9 +492,15 @@ function LineageList({
                   no owner
                 </Badge>
               )}
-            </li>
+            </motion.li>
           ))}
-        </ul>
+        </motion.ul>
+      )}
+
+      {ownerless > 0 && (
+        <p className="mt-2 text-[10px] text-warning">
+          {ownerless} of {nodes.length} have no owner to notify
+        </p>
       )}
     </div>
   );
@@ -419,9 +522,7 @@ function RawJson({ response }: { response: TriggerResponse }) {
   );
 }
 
-/** Hand-drawn check — the one moment of celebration in the app. */
-function SuccessMark() {
-  const reduced = useReducedMotion();
+function SuccessMark({ reduced }: { reduced: boolean }) {
   return (
     <motion.svg
       aria-hidden
@@ -440,7 +541,11 @@ function SuccessMark() {
         strokeLinejoin="round"
         initial={reduced ? false : { pathLength: 0 }}
         animate={{ pathLength: 1 }}
-        transition={{ duration: 0.35, ease: 'easeOut', delay: 0.08 }}
+        transition={
+          reduced
+            ? { duration: 0 }
+            : { duration: durationTokens.slow, ease: easing.entrance }
+        }
       />
     </motion.svg>
   );

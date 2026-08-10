@@ -53,3 +53,16 @@ export const statusColor = {
 } as const satisfies Record<string, ColorToken>;
 
 export type StatusTone = keyof typeof statusColor;
+
+/**
+ * Blast radius severity → colour token. Used by Badge, the timeline, and the
+ * lineage graph — `design/graph.ts` derives the graph's CSS variable names
+ * from this, so severity has exactly one colour mapping in the whole app.
+ */
+export const severityColor = {
+  critical: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'success',
+  unknown: 'muted',
+} as const satisfies Record<string, ColorToken>;

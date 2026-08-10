@@ -22,6 +22,34 @@ const SIZES: Record<Size, string> = {
   lg: 'h-11 px-5 gap-2 text-sm rounded-lg',
 };
 
+/**
+ * The button's visual recipe, without the `<button>`.
+ *
+ * Exists so an anchor that should look like a button (a link to the console, a
+ * link out to GitHub) gets the identical treatment instead of a hand-copied
+ * pile of classes that drifts the moment a variant changes.
+ */
+export function buttonClasses({
+  variant = 'secondary',
+  size = 'md',
+  fullWidth,
+  className,
+}: {
+  variant?: Variant;
+  size?: Size;
+  fullWidth?: boolean;
+  className?: string;
+} = {}) {
+  return cn(
+    'inline-flex items-center justify-center font-medium select-none',
+    'transition-colors duration-150 ease-standard',
+    VARIANTS[variant],
+    SIZES[size],
+    fullWidth && 'w-full',
+    className,
+  );
+}
+
 export interface ButtonProps
   extends Omit<
     ButtonHTMLAttributes<HTMLButtonElement>,
@@ -69,15 +97,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         whileHover={isDisabled || reduced ? undefined : { scale: interaction.hoverScale }}
         whileTap={isDisabled || reduced ? undefined : { scale: interaction.pressScale }}
         transition={spring.snappy}
-        className={cn(
-          'inline-flex items-center justify-center font-medium select-none',
-          'transition-colors duration-150 ease-standard',
-          'disabled:opacity-50 disabled:pointer-events-none',
-          VARIANTS[variant],
-          SIZES[size],
-          fullWidth && 'w-full',
-          className,
-        )}
+        className={buttonClasses({
+          variant,
+          size,
+          fullWidth,
+          className: cn('disabled:pointer-events-none disabled:opacity-50', className),
+        })}
         {...props}
       >
         {loading ? (

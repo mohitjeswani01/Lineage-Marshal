@@ -1,13 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import {
-  Activity,
-  Database,
-  ExternalLink,
-  Menu,
-  Radio,
-  X,
-} from 'lucide-react';
+import { ExternalLink, Menu, Radio, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { ThemeToggle } from './ThemeToggle';
 import { StatusDot } from '@/components/ui/Badge';
@@ -19,15 +12,10 @@ interface NavItem {
   id: string;
   label: string;
   icon: typeof Radio;
-  /** Sections not yet built are shown but disabled — honest, not hidden. */
-  disabled?: boolean;
 }
 
-const NAV: NavItem[] = [
-  { id: 'trigger', label: 'Trigger demo', icon: Radio },
-  { id: 'catalog', label: 'Catalog', icon: Database, disabled: true },
-  { id: 'incidents', label: 'Incidents', icon: Activity, disabled: true },
-];
+/** Only sections that actually exist. Add a route here when one ships. */
+const NAV: NavItem[] = [{ id: 'trigger', label: 'Investigations', icon: Radio }];
 
 const DATAHUB_UI =
   import.meta.env.VITE_DATAHUB_UI_URL ?? 'http://localhost:9002';
@@ -154,15 +142,18 @@ function Sidebar({
       className="fixed inset-y-0 left-0 z-50 flex w-66 flex-col border-r border-border bg-surface"
     >
       <div className="flex h-15 items-center gap-2.5 border-b border-border px-4">
-        <span
-          aria-hidden
-          className="flex size-7 items-center justify-center rounded-md bg-gradient-to-br from-accent to-accent-deep text-on-accent shadow-soft"
-        >
-          <Radio className="size-3.5" />
-        </span>
-        <span className="flex-1 text-sm font-semibold tracking-[-0.01em]">
-          Lineage Marshal
-        </span>
+        {/* Back to the landing page — the wordmark is where people look for it. */}
+        <a href="#/" className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span
+            aria-hidden
+            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-accent to-accent-deep text-on-accent shadow-soft"
+          >
+            <Radio className="size-3.5" />
+          </span>
+          <span className="truncate text-sm font-semibold tracking-[-0.01em]">
+            Lineage Marshal
+          </span>
+        </a>
         <button
           type="button"
           onClick={onClose}
@@ -180,16 +171,13 @@ function Sidebar({
             <li key={item.id}>
               <button
                 type="button"
-                disabled={item.disabled}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => onSelect(item.id)}
                 className={cn(
                   'relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm',
                   'transition-colors duration-150 ease-standard',
                   isActive ? 'text-text' : 'text-text-secondary',
-                  item.disabled
-                    ? 'cursor-not-allowed opacity-40'
-                    : 'hover:bg-accent-subtle hover:text-text',
+                  'hover:bg-accent-subtle hover:text-text',
                 )}
               >
                 {isActive && (
@@ -203,11 +191,6 @@ function Sidebar({
                 )}
                 <item.icon aria-hidden className="relative size-4 shrink-0" />
                 <span className="relative truncate">{item.label}</span>
-                {item.disabled && (
-                  <span className="relative ml-auto text-[10px] text-muted">
-                    soon
-                  </span>
-                )}
               </button>
             </li>
           );

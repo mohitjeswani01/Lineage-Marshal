@@ -9,11 +9,12 @@ import type { Transition, Variants } from 'framer-motion';
  * attached to the finger.
  */
 export const duration = {
-  instant: 0.08,
-  fast: 0.14,
-  normal: 0.22,
-  slow: 0.34,
-  slower: 0.5,
+  instant: 0.06,
+  fast: 0.12,
+  normal: 0.2,
+  slow: 0.3,
+  slower: 0.45,
+  ambient: 4.0,
 } as const;
 
 export const easing = {
@@ -23,29 +24,37 @@ export const easing = {
   entrance: [0.05, 0.7, 0.1, 1],
   /** Leaves quickly — exits should never make the user wait. */
   exit: [0.3, 0, 0.8, 0.15],
+  /** Spring-like but CSS-compatible. */
+  springOut: [0.15, 0.6, 0.3, 1],
 } as const;
 
 export const spring = {
   /** Snappy, no visible overshoot. Buttons, toggles, dropdowns. */
-  snappy: { type: 'spring', stiffness: 520, damping: 38, mass: 0.7 },
+  snappy: { type: 'spring', stiffness: 500, damping: 35, mass: 0.6 },
   /** Default panel/card motion — a touch of life without bounce. */
-  gentle: { type: 'spring', stiffness: 280, damping: 30, mass: 0.9 },
+  gentle: { type: 'spring', stiffness: 260, damping: 28, mass: 0.85 },
   /** Layout transitions where a small overshoot reads as "physical". */
-  bouncy: { type: 'spring', stiffness: 340, damping: 22, mass: 0.8 },
+  bouncy: { type: 'spring', stiffness: 320, damping: 20, mass: 0.75 },
+  /** Graph node reveal, edge draw, hop-distance stagger. */
+  graph: { type: 'spring', stiffness: 180, damping: 22, mass: 1.0 },
+  /** Idle drift, slow pulse — barely perceptible. */
+  ambient: { type: 'spring', stiffness: 40, damping: 8, mass: 2.0 },
 } as const satisfies Record<string, Transition>;
 
 export const stagger = {
   /** Between siblings in a list/grid reveal. */
-  children: 0.045,
+  children: 0.05,
   /** Before the first child starts. */
-  delay: 0.06,
+  delay: 0.08,
+  /** Between hop-distance bands in graph reveal. */
+  hopBand: 0.08,
 } as const;
 
 /** Hover/press scale values — consistent physicality across every control. */
 export const interaction = {
-  hoverScale: 1.015,
+  hoverScale: 1.012,
   hoverLift: -2,
-  pressScale: 0.985,
+  pressScale: 0.988,
 } as const;
 
 export const transition = {
@@ -95,7 +104,24 @@ export const popover: Variants = {
 export const shake: Variants = {
   idle: { x: 0 },
   shake: {
-    x: [0, -5, 4, -3, 2, 0],
+    x: [0, -4, 3, -2, 0],
     transition: { duration: duration.slow, ease: easing.standard },
   },
+};
+
+/**
+ * Blast-radius reveal — delay is proportional to hop distance, so impacted
+ * assets appear in the order the agent actually walked to them rather than
+ * all at once. Pass the hop as `custom`.
+ */
+export const hopReveal: Variants = {
+  hidden: { opacity: 0, x: -6 },
+  visible: (hop = 0) => ({
+    opacity: 1,
+    x: 0,
+    transition: {
+      ...transition.entrance,
+      delay: stagger.delay + hop * stagger.hopBand,
+    },
+  }),
 };

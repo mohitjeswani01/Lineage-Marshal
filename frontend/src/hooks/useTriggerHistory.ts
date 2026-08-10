@@ -34,13 +34,27 @@ const LIMIT = 25;
 export function useTriggerHistory() {
   const [entries, setEntries] = useLocalStorage<HistoryEntry[]>(KEY, []);
 
+  /** Returns the new entry's id so a still-running investigation can fill it in. */
   const add = useCallback(
     (entry: Omit<HistoryEntry, 'id'>) => {
       const id =
         globalThis.crypto?.randomUUID?.() ??
         `${entry.firedAt}-${Math.round(performance.now())}`;
       setEntries((prev) => [{ ...entry, id }, ...prev].slice(0, LIMIT));
+      return id;
     },
+    [setEntries],
+  );
+
+  /**
+   * Patch an existing entry. The agent accepts a trigger long before it
+   * finishes, so an entry is written at fire time and completed later.
+   */
+  const update = useCallback(
+    (id: string, patch: Partial<Omit<HistoryEntry, 'id'>>) =>
+      setEntries((prev) =>
+        prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
+      ),
     [setEntries],
   );
 
@@ -51,5 +65,5 @@ export function useTriggerHistory() {
 
   const clear = useCallback(() => setEntries([]), [setEntries]);
 
-  return { entries, add, remove, clear };
+  return { entries, add, update, remove, clear };
 }

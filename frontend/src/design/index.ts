@@ -5,3 +5,4 @@ export * from './shadows';
 export * from './typography';
 export * from './motion';
 export * from './tokens';
+export * from './graph';
