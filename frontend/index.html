@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="Lineage Marshal — trigger the data-incident agent against DataHub assets and inspect its response."
+    />
+    <title>Lineage Marshal</title>
+    <script>
+      // Applied before first paint so the themed background never flashes.
+      try {
+        var t = localStorage.getItem('lm.theme');
+        document.documentElement.dataset.theme =
+          t === 'light' || t === 'dark'
+            ? t
+            : matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+      } catch (_) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
