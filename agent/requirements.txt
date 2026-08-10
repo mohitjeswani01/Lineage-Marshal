@@ -1,4 +1,7 @@
-fastapi>=0.109.0
-uvicorn>=0.27.0
-pydantic>=2.5.0
-httpx>=0.26.0
+acryl-datahub==1.7.0
+mcp-server-datahub
+mcp
+python-dotenv
+pytest
+pytest-asyncio
+pydantic

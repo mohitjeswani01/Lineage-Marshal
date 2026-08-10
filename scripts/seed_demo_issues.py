@@ -12,7 +12,11 @@ Issues planted:
   2. NO OWNER       — dataset 'user_churn_predictions' emitted with an empty owners list.
   3. STALE FRESHNESS — dataset 'daily_revenue_report' with lastModified set 30 days in the past.
 
-All 3 datasets are on platform=hive, env=PROD to blend with the showcase-ecommerce pack.
+Also seeds multi-hop downstream lineage for all 3 assets so that Lineage Marshal's core
+differentiator — blast radius calculation, severity scoring, hop distance, and ownership gap detection —
+can be demonstrated live with rich downstream fan-out.
+
+All datasets are on platform=hive, env=PROD to blend with the showcase-ecommerce pack.
 
 Usage:
     python3 scripts/seed_demo_issues.py [--gms-url http://localhost:8080] [--token YOUR_PAT]
@@ -141,6 +145,50 @@ def emit_mcp(emitter: DatahubRestEmitter, urn: str, aspect) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Downstream Lineage Seeding Helpers
+# ---------------------------------------------------------------------------
+
+def seed_downstream_asset(
+    emitter: DatahubRestEmitter,
+    urn: str,
+    name: str,
+    description: str,
+    upstream_urns: list[str],
+    owners: list[str] | None = None,
+) -> None:
+    """Helper to create a downstream asset and link it to upstreams."""
+    ts = now_ms()
+    emit_mcp(emitter, urn, DatasetPropertiesClass(
+        name=name,
+        description=description,
+        created=audit_stamp(ts),
+        lastModified=audit_stamp(ts),
+    ))
+    emit_mcp(emitter, urn, make_minimal_schema())
+
+    # Upstream lineage
+    upstreams = [
+        UpstreamClass(
+            dataset=up_urn,
+            type="TRANSFORMED",
+            auditStamp=audit_stamp(ts),
+        )
+        for up_urn in upstream_urns
+    ]
+    emit_mcp(emitter, urn, UpstreamLineageClass(upstreams=upstreams))
+
+    # Ownership
+    owner_classes = []
+    if owners:
+        for o in owners:
+            owner_classes.append(OwnerClass(
+                owner=o if o.startswith("urn:li:corpuser:") else f"urn:li:corpuser:{o}",
+                type=OwnershipTypeClass.DATAOWNER,
+            ))
+    emit_mcp(emitter, urn, OwnershipClass(owners=owner_classes, lastModified=audit_stamp(ts)))
+
+
+# ---------------------------------------------------------------------------
 # Issue 1 — Broken lineage edge
 # ---------------------------------------------------------------------------
 
@@ -148,19 +196,13 @@ def seed_broken_lineage(graph: DataHubGraph, emitter: DatahubRestEmitter) -> boo
     """
     Create 'orders_revenue_summary' and give it an UpstreamLineage that points
     to 'orders_source_legacy' — a URN that does NOT exist in the catalog.
-
-    If the dataset already exists this is a no-op (idempotent).
-    Returns True if seeded (or already present), False on error.
+    Also seeds downstream assets (monthly_reconciliation_report, legacy_audit_export).
     """
     urn = BROKEN_LINEAGE_DATASET_URN
-    if dataset_exists(graph, urn):
-        log.info("[Issue 1] orders_revenue_summary already exists — skipping create, re-emitting lineage")
-    else:
-        log.info("[Issue 1] Creating orders_revenue_summary …")
+    log.info("[Issue 1] Seeding orders_revenue_summary & downstream lineage …")
 
     ts = now_ms()
 
-    # Dataset properties (always upsert so re-runs refresh description)
     emit_mcp(emitter, urn, DatasetPropertiesClass(
         name="orders_revenue_summary",
         description=(
@@ -172,10 +214,8 @@ def seed_broken_lineage(graph: DataHubGraph, emitter: DatahubRestEmitter) -> boo
         lastModified=audit_stamp(ts),
     ))
 
-    # Minimal schema
     emit_mcp(emitter, urn, make_minimal_schema())
 
-    # Upstream lineage pointing at the dangling (never-ingested) URN
     emit_mcp(emitter, urn, UpstreamLineageClass(
         upstreams=[
             UpstreamClass(
@@ -186,10 +226,31 @@ def seed_broken_lineage(graph: DataHubGraph, emitter: DatahubRestEmitter) -> boo
         ]
     ))
 
+    # Seed downstream assets for orders_revenue_summary
+    # Hop 1: monthly_reconciliation_report (Owned by charlie)
+    ds1_urn = f"urn:li:dataset:({PLATFORM_HIVE},monthly_reconciliation_report,{ENV})"
+    seed_downstream_asset(
+        emitter, ds1_urn, "monthly_reconciliation_report",
+        "Monthly financial reconciliation report derived from orders revenue summary.",
+        upstream_urns=[urn],
+        owners=["charlie"],
+    )
+
+    # Hop 2: legacy_audit_export (No owner!)
+    ds2_urn = f"urn:li:dataset:({PLATFORM_HIVE},legacy_audit_export,{ENV})"
+    seed_downstream_asset(
+        emitter, ds2_urn, "legacy_audit_export",
+        "Legacy audit export file generated from monthly reconciliation report.",
+        upstream_urns=[ds1_urn],
+        owners=[],  # Ownerless!
+    )
+
     log.info(
-        "[Issue 1] ✓ Broken lineage planted.\n"
-        f"          Asset  : {urn}\n"
-        f"          Dangling upstream: {DANGLING_UPSTREAM_URN}"
+        "[Issue 1] ✓ Broken lineage & downstream fan-out planted.\n"
+        f"          Asset : {urn}\n"
+        f"          Dangling upstream: {DANGLING_UPSTREAM_URN}\n"
+        f"          Downstream Hop 1 : {ds1_urn}\n"
+        f"          Downstream Hop 2 : {ds2_urn} (NO OWNER)"
     )
     return True
 
@@ -201,13 +262,10 @@ def seed_broken_lineage(graph: DataHubGraph, emitter: DatahubRestEmitter) -> boo
 def seed_no_owner(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bool:
     """
     Create 'user_churn_predictions' with an explicitly empty owners list.
-    Idempotent — safe to re-run.
+    Also seeds downstream asset (marketing_campaign_target_list).
     """
     urn = NO_OWNER_DATASET_URN
-    if dataset_exists(graph, urn):
-        log.info("[Issue 2] user_churn_predictions already exists — re-emitting ownership (empty)")
-    else:
-        log.info("[Issue 2] Creating user_churn_predictions …")
+    log.info("[Issue 2] Seeding user_churn_predictions & downstream lineage …")
 
     ts = now_ms()
 
@@ -224,16 +282,25 @@ def seed_no_owner(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bool:
 
     emit_mcp(emitter, urn, make_minimal_schema())
 
-    # Explicitly emit empty ownership — this is the planted issue
     emit_mcp(emitter, urn, OwnershipClass(
         owners=[],
         lastModified=audit_stamp(ts),
     ))
 
+    # Seed downstream asset for user_churn_predictions
+    # Hop 1: marketing_campaign_target_list (No owner!)
+    ds1_urn = f"urn:li:dataset:({PLATFORM_HIVE},marketing_campaign_target_list,{ENV})"
+    seed_downstream_asset(
+        emitter, ds1_urn, "marketing_campaign_target_list",
+        "Target user list for re-engagement marketing campaign based on churn predictions.",
+        upstream_urns=[urn],
+        owners=[],  # Ownerless!
+    )
+
     log.info(
-        "[Issue 2] ✓ No-owner condition planted.\n"
-        f"          Asset: {urn}\n"
-        "          Owners: [] (empty)"
+        "[Issue 2] ✓ No-owner condition & downstream asset planted.\n"
+        f"          Asset: {urn} (Owners: [])\n"
+        f"          Downstream Hop 1: {ds1_urn} (NO OWNER)"
     )
     return True
 
@@ -245,7 +312,10 @@ def seed_no_owner(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bool:
 def seed_stale_freshness(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bool:
     """
     Create 'daily_revenue_report' with lastModified set 30 days in the past.
-    Idempotent — safe to re-run.
+    Also seeds rich multi-hop downstream lineage:
+      - Hop 1: revenue_analytics_dashboard (Owner: alice)
+      - Hop 1: executive_finance_summary (Owner: bob)
+      - Hop 2: churn_risk_dashboard (NO OWNER)
     """
     urn = STALE_DATASET_URN
     stale_ts = days_ago_ms(STALE_DAYS)
@@ -253,12 +323,8 @@ def seed_stale_freshness(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bo
         "%Y-%m-%dT%H:%M:%SZ"
     )
 
-    if dataset_exists(graph, urn):
-        log.info(f"[Issue 3] daily_revenue_report already exists — re-emitting stale timestamp ({stale_dt})")
-    else:
-        log.info(f"[Issue 3] Creating daily_revenue_report with lastModified={stale_dt} …")
+    log.info(f"[Issue 3] Seeding daily_revenue_report & downstream lineage …")
 
-    # Properties: lastModified 30 days ago, created also 30 days ago
     emit_mcp(emitter, urn, DatasetPropertiesClass(
         name="daily_revenue_report",
         description=(
@@ -277,7 +343,6 @@ def seed_stale_freshness(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bo
 
     emit_mcp(emitter, urn, make_minimal_schema())
 
-    # Give it a real owner so it's not confused with Issue 2
     emit_mcp(emitter, urn, OwnershipClass(
         owners=[
             OwnerClass(
@@ -288,16 +353,47 @@ def seed_stale_freshness(graph: DataHubGraph, emitter: DatahubRestEmitter) -> bo
         lastModified=audit_stamp(stale_ts),
     ))
 
+    # Seed downstream assets for daily_revenue_report
+    # Hop 1a: revenue_analytics_dashboard (Owner: alice)
+    ds1a_urn = f"urn:li:dataset:({PLATFORM_HIVE},revenue_analytics_dashboard,{ENV})"
+    seed_downstream_asset(
+        emitter, ds1a_urn, "revenue_analytics_dashboard",
+        "Analytics dashboard consuming daily revenue reports for business operations.",
+        upstream_urns=[urn],
+        owners=["alice"],
+    )
+
+    # Hop 1b: executive_finance_summary (Owner: bob)
+    ds1b_urn = f"urn:li:dataset:({PLATFORM_HIVE},executive_finance_summary,{ENV})"
+    seed_downstream_asset(
+        emitter, ds1b_urn, "executive_finance_summary",
+        "Executive leadership summary table aggregating daily revenue metrics.",
+        upstream_urns=[urn],
+        owners=["bob"],
+    )
+
+    # Hop 2: churn_risk_dashboard (No owner!)
+    ds2_urn = f"urn:li:dataset:({PLATFORM_HIVE},churn_risk_dashboard,{ENV})"
+    seed_downstream_asset(
+        emitter, ds2_urn, "churn_risk_dashboard",
+        "Risk management dashboard consuming executive finance summaries.",
+        upstream_urns=[ds1b_urn],
+        owners=[],  # Ownerless!
+    )
+
     log.info(
-        f"[Issue 3] ✓ Stale freshness planted.\n"
+        f"[Issue 3] ✓ Stale freshness & multi-hop downstream lineage planted.\n"
         f"          Asset      : {urn}\n"
-        f"          lastModified: {stale_dt} ({STALE_DAYS} days ago)"
+        f"          lastModified: {stale_dt} ({STALE_DAYS} days ago)\n"
+        f"          Downstream Hop 1a: {ds1a_urn} (Owner: alice)\n"
+        f"          Downstream Hop 1b: {ds1b_urn} (Owner: bob)\n"
+        f"          Downstream Hop 2 : {ds2_urn} (NO OWNER)"
     )
     return True
 
 
 # ---------------------------------------------------------------------------
-# Verification helpers — query DataHub back to confirm each issue is detectable
+# Verification helpers
 # ---------------------------------------------------------------------------
 
 def verify_broken_lineage(graph: DataHubGraph) -> None:
@@ -313,7 +409,7 @@ def verify_broken_lineage(graph: DataHubGraph) -> None:
                     f"           exists in catalog: {exists}  ← should be False"
                 )
         else:
-            log.warning("           No upstreams found — lineage aspect may not have been stored yet")
+            log.warning("           No upstreams found")
     except Exception as e:
         log.error(f"           Verification query failed: {e}")
 
@@ -326,7 +422,7 @@ def verify_no_owner(graph: DataHubGraph) -> None:
         if ownership is not None:
             log.info(f"           owners: {[o.owner for o in ownership.owners]}  ← should be []")
         else:
-            log.info("           ownership aspect is None (no owners set)  ← expected")
+            log.info("           ownership aspect is None (no owners set)")
     except Exception as e:
         log.error(f"           Verification query failed: {e}")
 
@@ -347,7 +443,7 @@ def verify_stale_freshness(graph: DataHubGraph) -> None:
                 f"           age (days)   : {age_days}  ← should be ~{STALE_DAYS}"
             )
         else:
-            log.warning("           lastModified not found in properties aspect")
+            log.warning("           lastModified not found")
     except Exception as e:
         log.error(f"           Verification query failed: {e}")
 
@@ -379,43 +475,36 @@ def main():
     log.info(f"Auth    : {'PAT provided' if token else 'no auth (open instance)'}")
     log.info("=" * 60)
 
-    # Build graph client (for reads / existence checks)
     graph_config = DataHubGraphConfig(server=gms_url, token=token)
     graph = DataHubGraph(graph_config)
 
-    # Build emitter (for writes)
     emitter_kwargs = {"gms_server": gms_url}
     if token:
         emitter_kwargs["token"] = token
     emitter = DatahubRestEmitter(**emitter_kwargs)
 
-    # Connectivity check
     log.info("Checking GMS connectivity …")
     try:
         server_config = graph.get_config()
         log.info(f"Connected to DataHub GMS. Auth enabled: {server_config.get('authenticationEnabled', 'unknown')}")
     except Exception as e:
         log.error(f"Cannot reach GMS at {gms_url}: {e}")
-        log.error("Is DataHub running? Try: datahub docker quickstart")
         sys.exit(1)
 
-    # ---- Seed all three issues ----
     log.info("")
-    log.info("─── Planting demo issues ───")
+    log.info("─── Planting demo issues & downstream lineage ───")
     seed_broken_lineage(graph, emitter)
     log.info("")
     seed_no_owner(graph, emitter)
     log.info("")
     seed_stale_freshness(graph, emitter)
 
-    # Brief wait for GMS to index the MCPs before verifying
     log.info("")
-    log.info("Waiting 3s for GMS to index MCPs …")
+    log.info("Waiting 3s for GMS indexing …")
     time.sleep(3)
 
-    # ---- Verify all three issues are detectable ----
     log.info("")
-    log.info("─── Live verification (reading back from DataHub) ───")
+    log.info("─── Live verification ───")
     verify_broken_lineage(graph)
     log.info("")
     verify_no_owner(graph)
@@ -425,7 +514,6 @@ def main():
     log.info("")
     log.info("=" * 60)
     log.info("Seed complete. Check DataHub UI at http://localhost:9002")
-    log.info("Search for: orders_revenue_summary, user_churn_predictions, daily_revenue_report")
     log.info("=" * 60)
 
 
