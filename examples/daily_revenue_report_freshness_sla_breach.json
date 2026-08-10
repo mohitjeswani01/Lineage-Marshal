@@ -1,0 +1,105 @@
+{
+  "trigger": {
+    "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)",
+    "trigger_type": "FRESHNESS_SLA_BREACH",
+    "timestamp": "2026-08-10T13:53:11.375224+00:00",
+    "context": {
+      "sla_hours": 24,
+      "hours_since_last_update": 720,
+      "expected_cadence": "DAILY"
+    },
+    "source": "manual"
+  },
+  "blast_radius_summary": "3 downstream asset(s) affected; 1 high; 1 with no owner.",
+  "impacted_assets": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,churn_risk_dashboard,PROD)",
+      "hop_distance": 1,
+      "impact_label": "high",
+      "impact_score": 0.55,
+      "usage_data_available": true,
+      "ownership": {
+        "has_owner": false,
+        "primary_owner": null,
+        "all_owners": [],
+        "notification_priority": "ALL",
+        "no_owner_finding": "No owner assigned for urn:li:dataset:(urn:li:dataPlatform:hive,churn_risk_dashboard,PROD) \u2014 cannot notify"
+      },
+      "glossary": {
+        "terms": [],
+        "tags": [],
+        "domain": null
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,executive_finance_summary,PROD)",
+      "hop_distance": 1,
+      "impact_label": "medium",
+      "impact_score": 0.35,
+      "usage_data_available": true,
+      "ownership": {
+        "has_owner": true,
+        "primary_owner": "urn:li:corpuser:bob",
+        "all_owners": [
+          {
+            "owner_urn": "urn:li:corpuser:bob",
+            "owner_type": "corpuser",
+            "email": null,
+            "display_name": null
+          }
+        ],
+        "notification_priority": "ALL",
+        "no_owner_finding": null
+      },
+      "glossary": {
+        "terms": [],
+        "tags": [],
+        "domain": null
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,revenue_analytics_dashboard,PROD)",
+      "hop_distance": 1,
+      "impact_label": "medium",
+      "impact_score": 0.35,
+      "usage_data_available": true,
+      "ownership": {
+        "has_owner": true,
+        "primary_owner": "urn:li:corpuser:alice",
+        "all_owners": [
+          {
+            "owner_urn": "urn:li:corpuser:alice",
+            "owner_type": "corpuser",
+            "email": null,
+            "display_name": null
+          }
+        ],
+        "notification_priority": "ALL",
+        "no_owner_finding": null
+      },
+      "glossary": {
+        "terms": [],
+        "tags": [],
+        "domain": null
+      }
+    }
+  ],
+  "unknowns": [
+    "No owner assigned for urn:li:dataset:(urn:li:dataPlatform:hive,churn_risk_dashboard,PROD) \u2014 cannot notify",
+    "No business glossary terms found for urn:li:dataset:(urn:li:dataPlatform:hive,churn_risk_dashboard,PROD)",
+    "No business glossary terms found for urn:li:dataset:(urn:li:dataPlatform:hive,executive_finance_summary,PROD)",
+    "No business glossary terms found for urn:li:dataset:(urn:li:dataPlatform:hive,revenue_analytics_dashboard,PROD)"
+  ],
+  "prior_incidents": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,daily_revenue_report,PROD)",
+      "description": "## Investigation 1 \u2014 2026-08-10T11:36:52.360000+00:00 (by urn:li:corpuser:datahub)\n\nTest investigation context document",
+      "documents": [
+        {
+          "elements": 1
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-08-10T13:56:38.176215+00:00"
+}
