@@ -1,0 +1,51 @@
+{
+  "trigger": {
+    "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:hive,user_churn_predictions,PROD)",
+    "trigger_type": "JOB_FAILURE",
+    "timestamp": "2026-08-10T13:57:31.213442+00:00",
+    "context": {
+      "job_name": "train_churn_model",
+      "exit_code": 137,
+      "error": "OOMKilled"
+    },
+    "source": "manual"
+  },
+  "blast_radius_summary": "1 downstream asset(s) affected; 1 high; 1 with no owner.",
+  "impacted_assets": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD)",
+      "hop_distance": 1,
+      "impact_label": "high",
+      "impact_score": 0.55,
+      "usage_data_available": true,
+      "ownership": {
+        "has_owner": false,
+        "primary_owner": null,
+        "all_owners": [],
+        "notification_priority": "ALL",
+        "no_owner_finding": "No owner assigned for urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD) \u2014 cannot notify"
+      },
+      "glossary": {
+        "terms": [],
+        "tags": [],
+        "domain": null
+      }
+    }
+  ],
+  "unknowns": [
+    "No owner assigned for urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD) \u2014 cannot notify",
+    "No business glossary terms found for urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD)"
+  ],
+  "prior_incidents": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,user_churn_predictions,PROD)",
+      "description": "## Investigation 1 \u2014 2026-08-10T12:04:12.902000+00:00 (by urn:li:corpuser:datahub)\n\n### Incident Investigation Context\nTested by Lineage Marshal Agent Phase 1\n\n---\n\n## Investigation 2 \u2014 2026-08-10T12:05:44.474000+00:00 (by urn:li:corpuser:datahub)\n\n# Lineage Marshal \u2014 Investigation Report\n\n**Generated:** 2026-08-10T12:05:44.430704+00:00\n\n## Trigger\n\n- **Asset:** `urn:li:dataset:(urn:li:dataPlatform:hive,user_churn_predictions,PROD)`\n- **Type:** JOB_FAILURE\n- **Time:** 2026-08-10T12:05:25.448770+00:00\n- **Source:** manual\n- **Context:** {\n  \"job_id\": \"churn_model_v3\",\n  \"error\": \"OOM\"\n}\n\n## Blast Radius Summary\n\n1 downstream asset(s) affected; 1 high; 1 with no owner.\n\n## Impacted Assets\n\n### 1. `urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD)`\n\n- **Hop Distance:** 1\n- **Impact Label:** HIGH\n- **Impact Score:** 0.550\n- **Usage Data Available:** Yes\n\n**Ownership:**\n- \u274c No owner assigned for urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD) \u2014 cannot notify\n\n**Business Context:**\n- No glossary terms associated\n\n## \u26a0\ufe0f Unknowns & Gaps\n\n- No owner assigned for urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD) \u2014 cannot notify\n- No business glossary terms found for urn:li:dataset:(urn:li:dataPlatform:hive,marketing_campaign_target_list,PROD)\n\n## Prior Incidents (Context Documents)\n\n- **urn:li:dataset:(urn:li:dataPlatform:hive,user_churn_predictions,PROD)**\n  - Description: ## Investigation 1 \u2014 2026-08-10T12:04:12.902000+00:00 (by urn:li:corpuser:datahub)\n\n### Incident Investigation Context\nTested by Lineage Marshal Agent Phase 1...\n",
+      "documents": [
+        {
+          "elements": 2
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-08-10T13:58:12.050005+00:00"
+}
